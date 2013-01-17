@@ -95,8 +95,8 @@ scope6_ifattach(struct ifnet *ifp)
 {
 	struct scope6_id *sid;
 
-	sid = (struct scope6_id *)malloc(sizeof(*sid), M_IFADDR, M_WAITOK);
-	bzero(sid, sizeof(*sid));
+	sid = (struct scope6_id *)malloc(sizeof(*sid), M_IFADDR,
+	    M_WAITOK | M_ZERO);
 
 	/*
 	 * XXX: IPV6_ADDR_SCOPE_xxx macros are not standard.
@@ -104,13 +104,8 @@ scope6_ifattach(struct ifnet *ifp)
 	 */
 	sid->s6id_list[IPV6_ADDR_SCOPE_INTFACELOCAL] = ifp->if_index;
 	sid->s6id_list[IPV6_ADDR_SCOPE_LINKLOCAL] = ifp->if_index;
-#ifdef MULTI_SCOPE
-	/* by default, we don't care about scope boundary for these scopes. */
-	sid->s6id_list[IPV6_ADDR_SCOPE_SITELOCAL] = 1;
-	sid->s6id_list[IPV6_ADDR_SCOPE_ORGLOCAL] = 1;
-#endif
 
-	return sid;
+	return (sid);
 }
 
 void
@@ -477,3 +472,14 @@ in6_getscope(struct in6_addr *in6)
 
 	return (0);
 }
+
+/*
+ * Return zone id for the link-local scope.
+ */
+uint32_t
+in6_getlinkzone(const struct ifnet *ifp)
+{
+
+	return (ifp->if_index);
+}
+
