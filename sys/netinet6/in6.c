@@ -2703,13 +2703,11 @@ in6_domifattach(struct ifnet *ifp)
 {
 	struct in6_ifextra *ext;
 
-	ext = (struct in6_ifextra *)malloc(sizeof(*ext), M_IFADDR,
+	ext = malloc(sizeof(*ext), M_IFADDR, M_WAITOK | M_ZERO);
+	ext->in6_ifstat = malloc(sizeof(*ext->in6_ifstat), M_IFADDR,
 	    M_WAITOK | M_ZERO);
-	ext->in6_ifstat = (struct in6_ifstat *)malloc(
-	    sizeof(struct in6_ifstat), M_IFADDR, M_WAITOK | M_ZERO);
-	ext->icmp6_ifstat =
-	    (struct icmp6_ifstat *)malloc(sizeof(struct icmp6_ifstat),
-	    M_IFADDR, M_WAITOK | M_ZERO);
+	ext->icmp6_ifstat = malloc(sizeof(*ext->icmp6_ifstat), M_IFADDR,
+	    M_WAITOK | M_ZERO);
 
 	ext->nd_ifinfo = nd6_ifattach(ifp);
 	ext->scope6_id = scope6_ifattach(ifp);

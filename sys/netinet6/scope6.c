@@ -95,9 +95,7 @@ scope6_ifattach(struct ifnet *ifp)
 {
 	struct scope6_id *sid;
 
-	sid = (struct scope6_id *)malloc(sizeof(*sid), M_IFADDR,
-	    M_WAITOK | M_ZERO);
-
+	sid = malloc(sizeof(*sid), M_IFADDR, M_WAITOK | M_ZERO);
 	/*
 	 * XXX: IPV6_ADDR_SCOPE_xxx macros are not standard.
 	 * Should we rather hardcode here?
