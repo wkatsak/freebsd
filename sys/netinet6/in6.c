@@ -435,12 +435,6 @@ in6_control(struct socket *so, u_long cmd, caddr_t data,
 		break;
 	}
 	if (sa6 && sa6->sin6_family == AF_INET6) {
-		if (sa6->sin6_scope_id != 0)
-			error = sa6_embedscope(sa6, 0);
-		else
-			error = in6_setscope(&sa6->sin6_addr, ifp, NULL);
-		if (error != 0)
-			return (error);
 		if (td != NULL && (error = prison_check_ip6(td->td_ucred,
 		    &sa6->sin6_addr)) != 0)
 			return (error);
