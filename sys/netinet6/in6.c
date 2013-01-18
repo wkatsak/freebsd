@@ -538,8 +538,6 @@ in6_control(struct socket *so, u_long cmd, caddr_t data,
 	switch (cmd) {
 	case SIOCGIFADDR_IN6:
 		ifr->ifr_addr = ia->ia_addr;
-		if ((error = sa6_recoverscope(&ifr->ifr_addr)) != 0)
-			goto out;
 		break;
 
 	case SIOCGIFDSTADDR_IN6:
@@ -552,8 +550,6 @@ in6_control(struct socket *so, u_long cmd, caddr_t data,
 		 * an error?
 		 */
 		ifr->ifr_dstaddr = ia->ia_dstaddr;
-		if ((error = sa6_recoverscope(&ifr->ifr_dstaddr)) != 0)
-			goto out;
 		break;
 
 	case SIOCGIFNETMASK_IN6:
@@ -1771,7 +1767,6 @@ in6_lifaddr_ioctl(struct socket *so, u_long cmd, caddr_t data,
 			 * link-local address.
 			 */
 			bcopy(IFA_IN6(ifa), &candidate, sizeof(candidate));
-			in6_clearscope(&candidate);
 			candidate.s6_addr32[0] &= mask.s6_addr32[0];
 			candidate.s6_addr32[1] &= mask.s6_addr32[1];
 			candidate.s6_addr32[2] &= mask.s6_addr32[2];
@@ -1787,26 +1782,11 @@ in6_lifaddr_ioctl(struct socket *so, u_long cmd, caddr_t data,
 		ia = ifa2ia6(ifa);
 
 		if (cmd == SIOCGLIFADDR) {
-			int error;
-
 			/* fill in the if_laddrreq structure */
 			bcopy(&ia->ia_addr, &iflr->addr, ia->ia_addr.sin6_len);
-			error = sa6_recoverscope(
-			    (struct sockaddr_in6 *)&iflr->addr);
-			if (error != 0) {
-				ifa_free(ifa);
-				return (error);
-			}
-
 			if ((ifp->if_flags & IFF_POINTOPOINT) != 0) {
 				bcopy(&ia->ia_dstaddr, &iflr->dstaddr,
 				    ia->ia_dstaddr.sin6_len);
-				error = sa6_recoverscope(
-				    (struct sockaddr_in6 *)&iflr->dstaddr);
-				if (error != 0) {
-					ifa_free(ifa);
-					return (error);
-				}
 			} else
 				bzero(&iflr->dstaddr, sizeof(iflr->dstaddr));
 
@@ -1815,8 +1795,7 @@ in6_lifaddr_ioctl(struct socket *so, u_long cmd, caddr_t data,
 
 			iflr->flags = ia->ia6_flags;	/* XXX */
 			ifa_free(ifa);
-
-			return 0;
+			return (0);
 		} else {
 			struct in6_aliasreq ifra;
 
@@ -2670,8 +2649,6 @@ in6_lltable_dump(struct lltable *llt, struct sysctl_req *wr)
 			ndpc.sin6.sin6_family = AF_INET6;
 			ndpc.sin6.sin6_len = sizeof(ndpc.sin6);
 			bcopy(L3_ADDR(lle), &ndpc.sin6, L3_ADDR_LEN(lle));
-			if (V_deembed_scopeid)
-				sa6_recoverscope(&ndpc.sin6);
 
 			/* publish */
 			if (lle->la_flags & LLE_PUB)
