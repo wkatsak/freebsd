@@ -842,11 +842,6 @@ in6_update_ifa_join_mc(struct ifnet *ifp, struct in6_aliasreq *ifra,
 	llsol.s6_addr32[2] = htonl(1);
 	llsol.s6_addr32[3] = ifra->ifra_addr.sin6_addr.s6_addr32[3];
 	llsol.s6_addr8[12] = 0xff;
-	if ((error = in6_setscope(&llsol, ifp, NULL)) != 0) {
-		/* XXX: should not happen */
-		log(LOG_ERR, "%s: in6_setscope failed\n", __func__);
-		goto cleanup;
-	}
 	delay = 0;
 	if ((flags & IN6_IFAUPDATE_DADDELAY)) {
 		/*
@@ -859,7 +854,7 @@ in6_update_ifa_join_mc(struct ifnet *ifp, struct in6_aliasreq *ifra,
 	}
 	imm = in6_joingroup(ifp, &llsol, &error, delay);
 	if (imm == NULL) {
-		nd6log((LOG_WARNING, "%s: addmulti failed for %s on %s "
+		nd6log((LOG_WARNING, "%s: in6_joingroup failed for %s on %s "
 		    "(errno=%d)\n", __func__, ip6_sprintf(ip6buf, &llsol),
 		    if_name(ifp), error));
 		goto cleanup;
@@ -880,9 +875,6 @@ in6_update_ifa_join_mc(struct ifnet *ifp, struct in6_aliasreq *ifra,
 	mltaddr.sin6_len = sizeof(struct sockaddr_in6);
 	mltaddr.sin6_family = AF_INET6;
 	mltaddr.sin6_addr = in6addr_linklocal_allnodes;
-	if ((error = in6_setscope(&mltaddr.sin6_addr, ifp, NULL)) != 0)
-		goto cleanup; /* XXX: should not fail */
-
 	/*
 	 * XXX: do we really need this automatic routes?  We should probably
 	 * reconsider this stuff.  Most applications actually do not need the
@@ -890,7 +882,6 @@ in6_update_ifa_join_mc(struct ifnet *ifp, struct in6_aliasreq *ifra,
 	 */
 	rt = in6_rtalloc1((struct sockaddr *)&mltaddr, 0, 0UL, RT_DEFAULT_FIB);
 	if (rt != NULL) {
-		/* XXX: only works in !SCOPEDROUTING case. */
 		if (memcmp(&mltaddr.sin6_addr,
 		    &((struct sockaddr_in6 *)rt_key(rt))->sin6_addr,
 		    MLTMASK_LEN)) {
@@ -910,7 +901,7 @@ in6_update_ifa_join_mc(struct ifnet *ifp, struct in6_aliasreq *ifra,
 
 	imm = in6_joingroup(ifp, &mltaddr.sin6_addr, &error, 0);
 	if (imm == NULL) {
-		nd6log((LOG_WARNING, "%s: addmulti failed for %s on %s "
+		nd6log((LOG_WARNING, "%s: in6_joingroup failed for %s on %s "
 		    "(errno=%d)\n", __func__, ip6_sprintf(ip6buf,
 		    &mltaddr.sin6_addr), if_name(ifp), error));
 		goto cleanup;
@@ -932,8 +923,8 @@ in6_update_ifa_join_mc(struct ifnet *ifp, struct in6_aliasreq *ifra,
 		/* XXX jinmei */
 		imm = in6_joingroup(ifp, &mltaddr.sin6_addr, &error, delay);
 		if (imm == NULL)
-			nd6log((LOG_WARNING, "%s: addmulti failed for %s on %s "
-			    "(errno=%d)\n", __func__, ip6_sprintf(ip6buf,
+			nd6log((LOG_WARNING, "%s: in6_joingroup failed for %s "
+			    "on %s (errno=%d)\n", __func__, ip6_sprintf(ip6buf,
 			    &mltaddr.sin6_addr), if_name(ifp), error));
 			/* XXX not very fatal, go on... */
 		else
@@ -945,8 +936,6 @@ in6_update_ifa_join_mc(struct ifnet *ifp, struct in6_aliasreq *ifra,
 	 * (ff01::1%ifN, and ff01::%ifN/32)
 	 */
 	mltaddr.sin6_addr = in6addr_nodelocal_allnodes;
-	if ((error = in6_setscope(&mltaddr.sin6_addr, ifp, NULL)) != 0)
-		goto cleanup; /* XXX: should not fail */
 	/* XXX: again, do we really need the route? */
 	rt = in6_rtalloc1((struct sockaddr *)&mltaddr, 0, 0UL, RT_DEFAULT_FIB);
 	if (rt != NULL) {
@@ -969,7 +958,7 @@ in6_update_ifa_join_mc(struct ifnet *ifp, struct in6_aliasreq *ifra,
 
 	imm = in6_joingroup(ifp, &mltaddr.sin6_addr, &error, 0);
 	if (imm == NULL) {
-		nd6log((LOG_WARNING, "%s: addmulti failed for %s on %s "
+		nd6log((LOG_WARNING, "%s: in6_joingroup failed for %s on %s "
 		    "(errno=%d)\n", __func__, ip6_sprintf(ip6buf,
 		    &mltaddr.sin6_addr), if_name(ifp), error));
 		goto cleanup;
@@ -978,6 +967,7 @@ in6_update_ifa_join_mc(struct ifnet *ifp, struct in6_aliasreq *ifra,
 #undef	MLTMASK_LEN
 
 cleanup:
+	/* XXX */
 	return (error);
 }
 
@@ -1044,22 +1034,7 @@ in6_update_ifa(struct ifnet *ifp, struct in6_aliasreq *ifra,
 	dst6 = ifra->ifra_dstaddr;
 	if ((ifp->if_flags & (IFF_POINTOPOINT|IFF_LOOPBACK)) != 0 &&
 	    (dst6.sin6_family == AF_INET6)) {
-		struct in6_addr in6_tmp;
-		u_int32_t zoneid;
-
-		in6_tmp = dst6.sin6_addr;
-		if (in6_setscope(&in6_tmp, ifp, &zoneid))
-			return (EINVAL); /* XXX: should be impossible */
-
-		if (dst6.sin6_scope_id != 0) {
-			if (dst6.sin6_scope_id != zoneid)
-				return (EINVAL);
-		} else		/* user omit to specify the ID. */
-			dst6.sin6_scope_id = zoneid;
-
-		/* convert into the internal form */
-		if (sa6_embedscope(&dst6, 0))
-			return (EINVAL); /* XXX: should be impossible */
+		/* XXX: check a scope zone id */
 	}
 	/*
 	 * The destination address can be specified only for a p2p or a
@@ -1170,6 +1145,7 @@ in6_update_ifa(struct ifnet *ifp, struct in6_aliasreq *ifra,
 	 * If a new destination address is specified, scrub the old one and
 	 * install the new destination.  Note that the interface must be
 	 * p2p or loopback (see the check above.)
+	 * XXX: check scope zone id
 	 */
 	if (dst6.sin6_family == AF_INET6 &&
 	    !IN6_ARE_ADDR_EQUAL(&dst6.sin6_addr, &ia->ia_dstaddr.sin6_addr)) {
@@ -1345,9 +1321,6 @@ in6_purgeaddr_mc(struct ifnet *ifp, struct in6_ifaddr *ia, struct ifaddr *ifa0)
 	mltaddr.sin6_family = AF_INET6;
 	mltaddr.sin6_addr = in6addr_linklocal_allnodes;
 
-	if ((error = in6_setscope(&mltaddr.sin6_addr, ifp, NULL)) != 0)
-		return (error);
-
 	/*
 	 * As for the mltaddr above, proactively prepare the sin6 to avoid
 	 * rtentry un- and re-locking.
@@ -1358,9 +1331,6 @@ in6_purgeaddr_mc(struct ifnet *ifp, struct in6_ifaddr *ia, struct ifaddr *ifa0)
 		sin6.sin6_family = AF_INET6;
 		memcpy(&sin6.sin6_addr, &satosin6(ifa0->ifa_addr)->sin6_addr,
 		    sizeof(sin6.sin6_addr));
-		error = in6_setscope(&sin6.sin6_addr, ifa0->ifa_ifp, NULL);
-		if (error != 0)
-			return (error);
 	}
 
 	rt = in6_rtalloc1((struct sockaddr *)&mltaddr, 0, 0UL, RT_DEFAULT_FIB);
@@ -1402,9 +1372,6 @@ in6_purgeaddr_mc(struct ifnet *ifp, struct in6_ifaddr *ia, struct ifaddr *ifa0)
 	 * Remove the node-local all-nodes address.
 	 */
 	mltaddr.sin6_addr = in6addr_nodelocal_allnodes;
-	if ((error = in6_setscope(&mltaddr.sin6_addr, ifp, NULL)) != 0)
-		return (error);
-
 	rt = in6_rtalloc1((struct sockaddr *)&mltaddr, 0, 0UL, RT_DEFAULT_FIB);
 	if (rt != NULL && rt->rt_gateway != NULL &&
 	    (memcmp(&satosin6(rt->rt_gateway)->sin6_addr,
