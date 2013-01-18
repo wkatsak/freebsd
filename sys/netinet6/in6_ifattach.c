@@ -675,10 +675,7 @@ in6_nigroup(struct ifnet *ifp, const char *name, int namelen,
 	in6->s6_addr16[0] = IPV6_ADDR_INT16_MLL;
 	in6->s6_addr8[11] = 2;
 	bcopy(digest, &in6->s6_addr32[3], sizeof(in6->s6_addr32[3]));
-	if (in6_setscope(in6, ifp, NULL))
-		return (-1); /* XXX: should not fail */
-
-	return 0;
+	return (0);
 }
 
 /*
@@ -856,9 +853,6 @@ in6_ifdetach(struct ifnet *ifp)
 	sin6.sin6_len = sizeof(struct sockaddr_in6);
 	sin6.sin6_family = AF_INET6;
 	sin6.sin6_addr = in6addr_linklocal_allnodes;
-	if (in6_setscope(&sin6.sin6_addr, ifp, NULL))
-		/* XXX: should not fail */
-		return;
 	/* XXX grab lock first to avoid LOR */
 	rnh = rt_tables_get_rnh(RT_DEFAULT_FIB, AF_INET6);
 	if (rnh != NULL) {
