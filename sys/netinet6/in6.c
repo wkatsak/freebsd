@@ -359,19 +359,9 @@ in6_control(struct socket *so, u_long cmd, caddr_t data,
 
 	switch (cmd) {
 	case SIOCSSCOPE6:
-		if (td != NULL) {
-			error = priv_check(td, PRIV_NETINET_SCOPE6);
-			if (error)
-				return (error);
-		}
-		return (scope6_set(ifp,
-		    (struct scope6_id *)ifr->ifr_ifru.ifru_scope_id));
 	case SIOCGSCOPE6:
-		return (scope6_get(ifp,
-		    (struct scope6_id *)ifr->ifr_ifru.ifru_scope_id));
 	case SIOCGSCOPE6DEF:
-		return (scope6_get_default((struct scope6_id *)
-		    ifr->ifr_ifru.ifru_scope_id));
+		return (EOPNOTSUPP);
 	}
 
 	switch (cmd) {
