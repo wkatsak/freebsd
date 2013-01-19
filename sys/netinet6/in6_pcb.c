@@ -449,15 +449,13 @@ in6_sockaddr(in_port_t port, struct in6_addr *addr_p)
 {
 	struct sockaddr_in6 *sin6;
 
-	sin6 = malloc(sizeof *sin6, M_SONAME, M_WAITOK);
-	bzero(sin6, sizeof *sin6);
+	sin6 = malloc(sizeof(*sin6), M_SONAME, M_WAITOK | M_ZERO);
 	sin6->sin6_family = AF_INET6;
 	sin6->sin6_len = sizeof(*sin6);
 	sin6->sin6_port = port;
 	sin6->sin6_addr = *addr_p;
-	(void)sa6_recoverscope(sin6); /* XXX: should catch errors */
 
-	return (struct sockaddr *)sin6;
+	return ((struct sockaddr *)sin6);
 }
 
 struct sockaddr *
@@ -1200,8 +1198,6 @@ init_sin6(struct sockaddr_in6 *sin6, struct mbuf *m)
 	sin6->sin6_len = sizeof(*sin6);
 	sin6->sin6_family = AF_INET6;
 	sin6->sin6_addr = ip->ip6_src;
-
-	(void)sa6_recoverscope(sin6); /* XXX: should catch errors... */
 
 	return;
 }
