@@ -466,6 +466,20 @@ sa6_checkzone(struct sockaddr_in6 *sa6)
 
 	scope = in6_addrscope(&sa6->sin6_addr);
 	if (scope == IPV6_ADDR_SCOPE_GLOBAL) {
+		/*
+		 * Since ::1 address always configured on the lo0, we can
+		 * automagically set its zone id, when it is not specified.
+		 * Return error, when specified zone id doesn't match with
+		 * actual value.
+		 */
+		if (IN6_IS_ADDR_LOOPBACK(&sa6->sin6_addr)) {
+			if (sa6.sin6_scope_id == 0) {
+				sa6.sin6_scope_id = in6_getlinkzone(V_loif);
+				return (0);
+			}
+			if (sa6.sin6_scope_id == in6_getlinkzone(V_loif))
+				return (0);
+		}
 		/* We don't want zone id for global scope */
 		return (sa6.sin6_scope_id ? EINVAL: 0);
 	}
