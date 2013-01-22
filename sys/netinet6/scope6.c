@@ -473,20 +473,20 @@ sa6_checkzone(struct sockaddr_in6 *sa6)
 		 * actual value.
 		 */
 		if (IN6_IS_ADDR_LOOPBACK(&sa6->sin6_addr)) {
-			if (sa6.sin6_scope_id == 0) {
-				sa6.sin6_scope_id = in6_getlinkzone(V_loif);
+			if (sa6->sin6_sin6_scope_id == 0) {
+				sa6->sin6_scope_id = in6_getlinkzone(V_loif);
 				return (0);
 			}
-			if (sa6.sin6_scope_id == in6_getlinkzone(V_loif))
+			if (sa6->sin6_scope_id == in6_getlinkzone(V_loif))
 				return (0);
 		}
 		/* We don't want zone id for global scope */
-		return (sa6.sin6_scope_id ? EINVAL: 0);
+		return (sa6->sin6_scope_id ? EINVAL: 0);
 	}
-	if (sa6.sin6_scope_id != 0)
+	if (sa6->sin6_scope_id != 0)
 		return (0);
 	if (V_ip6_use_defzone != 0)
-		sa6.sin6_scope_id = V_sid_default.s6id_list[scope];
+		sa6->sin6_scope_id = V_sid_default.s6id_list[scope];
 	/* Return error if we can't determine zone id */
-	return (sa6.sin6_scope_id ? 0: EINVAL);
+	return (sa6->sin6_scope_id ? 0: EINVAL);
 }
