@@ -1904,6 +1904,33 @@ in6ifa_ifpwithaddr(struct ifnet *ifp, struct in6_addr *addr)
 }
 
 /*
+ * find the internet address corresponding to a given address.
+ * ifaddr is returned referenced.
+ */
+struct in6_ifaddr *
+in6ifa_ifwithaddr(const struct sockaddr_in6 *sa6)
+{
+	struct in6_ifaddr *ia;
+
+	IN6_IFADDR_RLOCK();
+	LIST_FOREACH(ia, IN6ADDR_HASH(&sa6->sin6_addr), ia6_hash) {
+		if (IN6_ARE_ADDR_EQUAL(IA6_IN6(ia), &sa6->sin6_addr)) {
+			/*
+			 * XXX: should we determine the scope and compare
+			 * sin6_scope_id with corresponding zone id?
+			 */
+			if (sa6->sin6_scope_id != 0 &&
+			    sa6->sin6_scope_id != in6_getlinkzone(ia->ia_ifp))
+				continue;
+			ifa_ref(ia);
+			break;
+		}
+	}
+	IN6_IFADDR_RUNLOCK();
+	return (ia);
+}
+
+/*
  * Convert IP6 address to printable (loggable) representation. Caller
  * has to make sure that ip6buf is at least INET6_ADDRSTRLEN long.
  */
