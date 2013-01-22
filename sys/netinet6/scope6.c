@@ -202,60 +202,20 @@ scope6_get(struct ifnet *ifp, struct scope6_id *idlist)
 int
 in6_addrscope(struct in6_addr *addr)
 {
-	int scope;
 
-	if (addr->s6_addr[0] == 0xfe) {
-		scope = addr->s6_addr[1] & 0xc0;
-
-		switch (scope) {
-		case 0x80:
-			return IPV6_ADDR_SCOPE_LINKLOCAL;
-			break;
-		case 0xc0:
-			return IPV6_ADDR_SCOPE_SITELOCAL;
-			break;
-		default:
-			return IPV6_ADDR_SCOPE_GLOBAL; /* just in case */
-			break;
-		}
-	}
-
-
-	if (addr->s6_addr[0] == 0xff) {
-		scope = addr->s6_addr[1] & 0x0f;
-
-		/*
-		 * due to other scope such as reserved,
-		 * return scope doesn't work.
-		 */
-		switch (scope) {
-		case IPV6_ADDR_SCOPE_INTFACELOCAL:
-			return IPV6_ADDR_SCOPE_INTFACELOCAL;
-			break;
-		case IPV6_ADDR_SCOPE_LINKLOCAL:
-			return IPV6_ADDR_SCOPE_LINKLOCAL;
-			break;
-		case IPV6_ADDR_SCOPE_SITELOCAL:
-			return IPV6_ADDR_SCOPE_SITELOCAL;
-			break;
-		default:
-			return IPV6_ADDR_SCOPE_GLOBAL;
-			break;
-		}
-	}
-
-	/*
-	 * Regard loopback and unspecified addresses as global, since
-	 * they have no ambiguity.
-	 */
+	if (IN6_IS_ADDR_MULTICAST(addr))
+		return (IPV6_ADDR_MC_SCOPE(addr));
+	if (IN6_IS_ADDR_LINKLOCAL(addr))
+		return (IPV6_ADDR_SCOPE_LINKLOCAL);
 	if (bcmp(&in6addr_loopback, addr, sizeof(*addr) - 1) == 0) {
 		if (addr->s6_addr[15] == 1) /* loopback */
-			return IPV6_ADDR_SCOPE_LINKLOCAL;
-		if (addr->s6_addr[15] == 0) /* unspecified */
-			return IPV6_ADDR_SCOPE_GLOBAL; /* XXX: correct? */
+			return (IPV6_ADDR_SCOPE_LINKLOCAL);
+		/*
+		 * Regard unspecified address as global, since
+		 * it has no ambiguity.
+		 */
 	}
-
-	return IPV6_ADDR_SCOPE_GLOBAL;
+	return (IPV6_ADDR_SCOPE_GLOBAL);
 }
 
 /*
