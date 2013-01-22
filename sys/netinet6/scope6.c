@@ -207,7 +207,14 @@ in6_addrscope(struct in6_addr *addr)
 		return (IPV6_ADDR_MC_SCOPE(addr));
 	if (IN6_IS_ADDR_LINKLOCAL(addr))
 		return (IPV6_ADDR_SCOPE_LINKLOCAL);
+#if 0
 	if (bcmp(&in6addr_loopback, addr, sizeof(*addr) - 1) == 0) {
+		/*
+		 * XXX: RFC 4007 says that ::1 should treated as having
+		 * link-local scope. But we don't allow configure it on
+		 * several loopback interfaces. So, actually it has the
+		 * global scope.
+		 */
 		if (addr->s6_addr[15] == 1) /* loopback */
 			return (IPV6_ADDR_SCOPE_LINKLOCAL);
 		/*
@@ -215,6 +222,7 @@ in6_addrscope(struct in6_addr *addr)
 		 * it has no ambiguity.
 		 */
 	}
+#endif
 	return (IPV6_ADDR_SCOPE_GLOBAL);
 }
 
@@ -441,3 +449,30 @@ in6_getlinkzone(const struct ifnet *ifp)
 	return (ifp->if_index);
 }
 
+/*
+ * This function is for checking sockaddr_in6 structure, that was passed
+ * from the application level.
+ *
+ * sin6_scope_id should be set for link-local unicast addresses and for
+ * any multicast addresses, except from global scope.
+ *
+ * If it is zero, then look into default zone ids. If default zone id is
+ * not set or disabled, then return error.
+ */
+int
+sa6_checkzone(struct sockaddr_in6 *sa6)
+{
+	int scope;
+
+	scope = in6_addrscope(&sa6->sin6_addr);
+	if (scope == IPV6_ADDR_SCOPE_GLOBAL) {
+		/* We don't want zone id for global scope */
+		return (sa6.sin6_scope_id ? EINVAL: 0);
+	}
+	if (sa6.sin6_scope_id != 0)
+		return (0);
+	if (V_ip6_use_defzone != 0)
+		sa6.sin6_scope_id = V_sid_default.s6id_list[scope];
+	/* Return error if we can't determine zone id */
+	return (sa6.sin6_scope_id ? 0: EINVAL);
+}
