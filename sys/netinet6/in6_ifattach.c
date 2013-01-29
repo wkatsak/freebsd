@@ -478,7 +478,8 @@ in6_ifattach_linklocal(struct ifnet *ifp, struct ifnet *altifp)
 			return (-1);
 		}
 	}
-	ifra.ifra_addr.sin6_scope_id = in6_getlinkzone(ifp);
+	ifra.ifra_addr.sin6_scope_id = in6_getscopezone(ifp,
+	    IPV6_ADDR_SCOPE_LINKLOCAL);
 
 	ifra.ifra_prefixmask.sin6_len = sizeof(struct sockaddr_in6);
 	ifra.ifra_prefixmask.sin6_family = AF_INET6;

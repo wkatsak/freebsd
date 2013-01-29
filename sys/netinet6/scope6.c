@@ -200,29 +200,14 @@ scope6_get(struct ifnet *ifp, struct scope6_id *idlist)
  * Get a scope of the address. Node-local, link-local, site-local or global.
  */
 int
-in6_addrscope(struct in6_addr *addr)
+in6_addrscope(const struct in6_addr *addr)
 {
 
 	if (IN6_IS_ADDR_MULTICAST(addr))
 		return (IPV6_ADDR_MC_SCOPE(addr));
-	if (IN6_IS_ADDR_LINKLOCAL(addr))
+	if (IN6_IS_ADDR_LINKLOCAL(addr) ||
+	    IN6_IS_ADDR_LOOPBACK(addr))
 		return (IPV6_ADDR_SCOPE_LINKLOCAL);
-#if 0
-	if (bcmp(&in6addr_loopback, addr, sizeof(*addr) - 1) == 0) {
-		/*
-		 * XXX: RFC 4007 says that ::1 should treated as having
-		 * link-local scope. But we don't allow configure it on
-		 * several loopback interfaces. So, actually it has the
-		 * global scope.
-		 */
-		if (addr->s6_addr[15] == 1) /* loopback */
-			return (IPV6_ADDR_SCOPE_LINKLOCAL);
-		/*
-		 * Regard unspecified address as global, since
-		 * it has no ambiguity.
-		 */
-	}
-#endif
 	return (IPV6_ADDR_SCOPE_GLOBAL);
 }
 
@@ -440,13 +425,18 @@ in6_getscope(struct in6_addr *in6)
 }
 
 /*
- * Return zone id for the link-local scope.
+ * Return zone id for the specified scope.
  */
 uint32_t
-in6_getlinkzone(const struct ifnet *ifp)
+in6_getscopezone(const struct ifnet *ifp, int scope)
 {
 
-	return (ifp->if_index);
+	if (scope == IPV6_ADDR_SCOPE_INTFACELOCAL ||
+	    scope == IPV6_ADDR_SCOPE_LINKLOCAL)
+		return (ifp->if_index);
+	if (scope >= 0 && scope < IPV6_ADDR_SCOPES_COUNT)
+		return (SID(ifp)->s6id_list[scope]);
+	return (0);
 }
 
 /*
@@ -466,27 +456,27 @@ sa6_checkzone(struct sockaddr_in6 *sa6)
 
 	scope = in6_addrscope(&sa6->sin6_addr);
 	if (scope == IPV6_ADDR_SCOPE_GLOBAL) {
-		/*
-		 * Since ::1 address always configured on the lo0, we can
-		 * automagically set its zone id, when it is not specified.
-		 * Return error, when specified zone id doesn't match with
-		 * actual value.
-		 */
-		if (IN6_IS_ADDR_LOOPBACK(&sa6->sin6_addr)) {
-			if (sa6->sin6_sin6_scope_id == 0) {
-				sa6->sin6_scope_id = in6_getlinkzone(V_loif);
-				return (0);
-			}
-			if (sa6->sin6_scope_id == in6_getlinkzone(V_loif))
-				return (0);
-		}
 		/* We don't want zone id for global scope */
 		return (sa6->sin6_scope_id ? EINVAL: 0);
+	}
+	/*
+	 * Since ::1 address always configured on the lo0, we can
+	 * automatically set its zone id, when it is not specified.
+	 * Return error, when specified zone id doesn't match with
+	 * actual value.
+	 */
+	if (IN6_IS_ADDR_LOOPBACK(&sa6->sin6_addr)) {
+		if (sa6->sin6_scope_id == 0)
+			sa6->sin6_scope_id = in6_getscopezone(V_loif,
+			    IPV6_ADDR_SCOPE_LINKLOCAL);
+		if (sa6->sin6_scope_id != in6_getscopezone(V_loif,
+		    IPV6_ADDR_SCOPE_LINKLOCAL))
+			return (EADDRNOTAVAIL);
 	}
 	if (sa6->sin6_scope_id != 0)
 		return (0);
 	if (V_ip6_use_defzone != 0)
 		sa6->sin6_scope_id = V_sid_default.s6id_list[scope];
 	/* Return error if we can't determine zone id */
-	return (sa6->sin6_scope_id ? 0: EINVAL);
+	return (sa6->sin6_scope_id ? 0: EADDRNOTAVAIL);
 }
