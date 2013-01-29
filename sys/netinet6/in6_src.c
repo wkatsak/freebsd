@@ -225,7 +225,6 @@ in6_selectsrc(struct sockaddr_in6 *dstsock, struct ip6_pktopts *opts,
 	 */
 	if (opts && (pi = opts->ip6po_pktinfo) &&
 	    !IN6_IS_ADDR_UNSPECIFIED(&pi->ipi6_addr)) {
-		struct sockaddr_in6 srcsock;
 		struct in6_ifaddr *ia6;
 
 		/* get the outgoing interface */
@@ -233,37 +232,27 @@ in6_selectsrc(struct sockaddr_in6 *dstsock, struct ip6_pktopts *opts,
 		    (inp != NULL) ? inp->inp_inc.inc_fibnum : RT_DEFAULT_FIB))
 		    != 0)
 			return (error);
-
+		KASSERT(ifp != NULL, ("%s: ifp is NULL", __func__));
 		/*
-		 * determine the appropriate zone id of the source based on
+		 * Determine the appropriate zone id of the source based on
 		 * the zone of the destination and the outgoing interface.
-		 * If the specified address is ambiguous wrt the scope zone,
-		 * the interface must be specified; otherwise, ifa_ifwithaddr()
-		 * will fail matching the address.
 		 */
-		bzero(&srcsock, sizeof(srcsock));
-		srcsock.sin6_family = AF_INET6;
-		srcsock.sin6_len = sizeof(srcsock);
-		srcsock.sin6_addr = pi->ipi6_addr;
-		if (ifp) {
-			error = in6_setscope(&srcsock.sin6_addr, ifp, NULL);
-			if (error)
-				return (error);
-		}
+		odstzone = in6_getscopezone(ifp,
+		    in6_addrscope(&pi->ipi6_addr));
+
+		/* XXX: prison_local_ip6 can override pi->ipi6_addr */
 		if (cred != NULL && (error = prison_local_ip6(cred,
-		    &srcsock.sin6_addr, (inp != NULL &&
+		    &pi->ipi6_addr, (inp != NULL &&
 		    (inp->inp_flags & IN6P_IPV6_V6ONLY) != 0))) != 0)
 			return (error);
 
-		ia6 = (struct in6_ifaddr *)ifa_ifwithaddr(
-		    (struct sockaddr *)&srcsock);
+		ia6 = in6ifa_ifwithaddr(&pi->ipi6_addr, odstzone);
 		if (ia6 == NULL ||
 		    (ia6->ia6_flags & (IN6_IFF_ANYCAST | IN6_IFF_NOTREADY))) {
 			if (ia6 != NULL)
 				ifa_free(&ia6->ia_ifa);
 			return (EADDRNOTAVAIL);
 		}
-		pi->ipi6_addr = srcsock.sin6_addr; /* XXX: this overrides pi */
 		if (ifpp)
 			*ifpp = ifp;
 		bcopy(&ia6->ia_addr.sin6_addr, srcp, sizeof(*srcp));
