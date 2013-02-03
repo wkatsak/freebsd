@@ -135,6 +135,7 @@ static int in6_selectif(struct sockaddr_in6 *, struct ip6_pktopts *,
 	struct ifnet *, u_int);
 
 static struct in6_addrpolicy *lookup_addrsel_policy(struct sockaddr_in6 *);
+static int lookup_policy_label(const struct sockaddr_in6 *);
 
 static void init_policy_queue(void);
 static int add_addrsel_policyent(struct in6_addrpolicy *);
@@ -151,52 +152,163 @@ static int in6_srcaddrscope(const struct in6_addr *);
  * If necessary, this function lookups the routing table and returns
  * an entry to the caller for later use.
  */
-#define REPLACE(r) do {\
-	if ((r) < sizeof(V_ip6stat.ip6s_sources_rule) / \
-		sizeof(V_ip6stat.ip6s_sources_rule[0])) /* check for safety */ \
-		V_ip6stat.ip6s_sources_rule[(r)]++; \
-	/* { \
-	char ip6buf[INET6_ADDRSTRLEN], ip6b[INET6_ADDRSTRLEN]; \
-	printf("in6_selectsrc: replace %s with %s by %d\n", ia_best ? ip6_sprintf(ip6buf, &ia_best->ia_addr.sin6_addr) : "none", ip6_sprintf(ip6b, &ia->ia_addr.sin6_addr), (r)); \
-	} */ \
-	goto replace; \
-} while(0)
-#define NEXT(r) do {\
-	if ((r) < sizeof(V_ip6stat.ip6s_sources_rule) / \
-		sizeof(V_ip6stat.ip6s_sources_rule[0])) /* check for safety */ \
-		V_ip6stat.ip6s_sources_rule[(r)]++; \
-	/* { \
-	char ip6buf[INET6_ADDRSTRLEN], ip6b[INET6_ADDRSTRLEN]; \
-	printf("in6_selectsrc: keep %s against %s by %d\n", ia_best ? ip6_sprintf(ip6buf, &ia_best->ia_addr.sin6_addr) : "none", ip6_sprintf(ip6b, &ia->ia_addr.sin6_addr), (r)); \
-	} */ \
-	goto next;		/* XXX: we can't use 'continue' here */ \
-} while(0)
-#define BREAK(r) do { \
-	if ((r) < sizeof(V_ip6stat.ip6s_sources_rule) / \
-		sizeof(V_ip6stat.ip6s_sources_rule[0])) /* check for safety */ \
-		V_ip6stat.ip6s_sources_rule[(r)]++; \
-	goto out;		/* XXX: we can't use 'break' here */ \
-} while(0)
+
+struct srcaddr_choice {
+	struct in6_ifaddr *ia;
+	int scope;
+	int label;
+	int rule;
+};
+
+struct dstaddr_props {
+	struct ifnet *ifp;
+	struct in6_addr *addr;
+	int scope;
+	int label;
+	int prefixlen;
+};
+
+#define	REPLACE(r)	{ rule = r; goto replace; }
+#define	NEXT(r)		{ rule = r; goto next; }
+
+static int
+srcaddrcmp(struct srcaddr_choice *c, const struct in6_ifaddr *ia,
+    struct dstaddr_props *dst, const struct ucred *cred,
+    const struct ip6_pktopts *opts)
+{
+	int srcscope, rule, label, prefer_tempaddr, prefixlen;
+
+	/* Avoid unusable addresses */
+	if ((ia->ia6_flags & (IN6_IFF_NOTREADY | IN6_IFF_DETACHED)) ||
+	    (ia->ia_ifp->if_flags & IFF_UP) == 0)
+		return (-1);
+	/*
+	 * In any case, multicast addresses and the unspecified address
+	 * MUST NOT be included in a candidate set.
+	 */
+	if (IN6_IS_ADDR_MULTICAST(IA6_IN6(ia)) ||
+	    IN6_IS_ADDR_UNSPECIFIED(IA6_IN6(ia)))
+		return (-1);
+	if (!V_ip6_use_deprecated && IFA6_IS_DEPRECATED(ia))
+		return (-1);
+	/* If jailed, only take addresses of the jail into account. */
+	if (cred != NULL && prison_check_ip6(cred, IA6_IN6(ia)) != 0)
+		return (-1);
+	/* Check scope zones */
+	scope = in6_srcaddrscope(IA6_IN6(ia));
+	if (in6_getscopezone(ia->ia_ifp, scope) !=
+	    in6_getscopezone(dst->ifp, dst->scope))
+		return (-1)
+	label = ADDR_LABEL_NOTAPP;
+	prefixlen = -1;
+	/* Rule 1: Prefer same address. */
+	if (IN6_ARE_ADDR_EQUAL(IA6_IN6(ia), dst->addr))
+		REPLACE(1);
+	/* Rule 2: Prefer appropriate scope. */
+	srcscope = in6_srcaddrscope(IA6_IN6(ia));
+	if (c->ia == NULL) {
+		dst->label = lookup_policy_label(dst->addr);
+		REPLACE(0);
+	}
+	if (IN6_ARE_SCOPE_CMP(c->scope, srcscope) < 0) {
+		if (IN6_ARE_SCOPE_CMP(c->scope, dst->scope) < 0)
+			REPLACE(2);
+		NEXT(2);
+	} else if (IN6_ARE_SCOPE_CMP(srcscope, c->scope) < 0) {
+		if (IN6_ARE_SCOPE_CMP(srcscope, dst->scope) < 0)
+			NEXT(2);
+		REPLACE(2);
+	}
+	/* Rule 3: Avoid deprecated addresses. */
+	if (!IFA6_IS_DEPRECATED(c->ia) && IFA6_IS_DEPRECATED(ia))
+		NEXT(3);
+	if (IFA6_IS_DEPRECATED(c->ia) && !IFA6_IS_DEPRECATED(ia))
+		REPLACE(3);
+	/*
+	 * Rule 4: Prefer home addresses.
+	 * XXX: This is a TODO.
+	 */
+	/* Rule 5: Prefer outgoing interface. */
+	if (c->ia->ia_ifp == dst->ifp && ia->ia_ifp != dst->ifp)
+		NEXT(5);
+	if (c->ia->ia_ifp != dst->ifp && ia->ia_ifp == dst->ifp)
+		REPLACE(5);
+	/*
+	 * Rule 5.5: Prefer addresses in a prefix advertised by
+	 * the next-hop.
+	 * XXX: not yet.
+	 */
+	/* Rule 6: Prefer matching label. */
+	if (dst->label != ADDR_LABEL_NOTAPP) {
+		c->label = lookup_policy_label(IA6_IN6(c->ia));
+		label = lookup_policy_label(IA6_IN6(ia));
+		if (c->label == dst->label && label != dst->label)
+			NEXT(6);
+		if (label == dst->label && c->label != dst->label)
+			REPLACE(6);
+	}
+	/* Rule 7: Prefer temporary addresses. */
+	if (opts == NULL ||
+	    opts->ip6po_prefer_tempaddr == IP6PO_TEMPADDR_SYSTEM)
+		prefer_tempaddr = V_ip6_prefer_tempaddr;
+	else if (opts->ip6po_prefer_tempaddr == IP6PO_TEMPADDR_NOTPREFER)
+		prefer_tempaddr = 0;
+	else
+		prefer_tempaddr = 1;
+	if ((c->ia->ia6_flags & IN6_IFF_TEMPORARY) != 0 &&
+	    (ia->ia6_flags & IN6_IFF_TEMPORARY) == 0) {
+		if (prefer_tempaddr)
+			NEXT(7);
+		REPLACE(7);
+	}
+	if ((c->ia->ia6_flags & IN6_IFF_TEMPORARY) == 0 &&
+	    (ia->ia6_flags & IN6_IFF_TEMPORARY) != 0) {
+		if (prefer_tempaddr)
+			REPLACE(7);
+		NEXT(7);
+	}
+	/* Rule 8: Use longest matching prefix. */
+	if (c->prefixlen < 0)
+		c->prefixlen = in6_matchlen(IA6_IN6(c->ia), dst->addr);
+	prefixlen = in6_matchlen(IA6_IN6(ia), dst->addr);
+	if (c->prefixlen > prefixlen)
+		NEXT(8);
+	if (prefixlen > c->prefixlen)
+		REPLACE(8);
+	return (-1);
+replace:
+	/* debug output */
+	c->ia = ia;
+	c->label = label;
+	c->scope = srcscope;
+	c->rule = rule;
+	c->prefixlen = prefixlen;
+	return (rule);
+next:
+	/* debug output */
+	return (rule);
+}
+#undef	REPLACE
+#undef	NEXT
 
 int
 in6_selectsrc(struct sockaddr_in6 *dstsock, struct ip6_pktopts *opts,
     struct inpcb *inp, struct route_in6 *ro, struct ucred *cred,
     struct ifnet **ifpp, struct in6_addr *srcp)
 {
-	struct in6_addr dst, tmp;
-	struct ifnet *ifp = NULL, *oifp = NULL;
-	struct in6_ifaddr *ia = NULL, *ia_best = NULL;
-	struct in6_pktinfo *pi = NULL;
-	int dst_scope = -1, best_scope = -1, best_matchlen = -1;
-	struct in6_addrpolicy *dst_policy = NULL, *best_policy = NULL;
-	u_int32_t odstzone;
-	int prefer_tempaddr;
-	int error;
+	struct dstaddr_props dstprops;
+	struct srcaddr_choice best;
+	struct in6_addr tmp;
 	struct ip6_moptions *mopts;
+	struct in6_pktinfo *pi;
+	struct in6_ifaddr *ia;
+	struct ifaddr *ifa;
+	struct ifnet *ifp, *oifp;
+	int error;
 
 	KASSERT(srcp != NULL, ("%s: srcp is NULL", __func__));
 
-	dst = dstsock->sin6_addr; /* make a copy for local operation */
+	ifp = oifp = NULL;
 	if (ifpp) {
 		/*
 		 * Save a possibly passed in ifp for in6_selectsrc. Only
@@ -209,7 +321,6 @@ in6_selectsrc(struct sockaddr_in6 *dstsock, struct ip6_pktopts *opts,
 			oifp = *ifpp;
 		*ifpp = NULL;
 	}
-
 	if (inp != NULL) {
 		INP_LOCK_ASSERT(inp);
 		mopts = inp->in6p_moptions;
@@ -225,41 +336,37 @@ in6_selectsrc(struct sockaddr_in6 *dstsock, struct ip6_pktopts *opts,
 	 */
 	if (opts && (pi = opts->ip6po_pktinfo) &&
 	    !IN6_IS_ADDR_UNSPECIFIED(&pi->ipi6_addr)) {
-		struct in6_ifaddr *ia6;
-
 		/* get the outgoing interface */
 		if ((error = in6_selectif(dstsock, opts, mopts, ro, &ifp, oifp,
 		    (inp != NULL) ? inp->inp_inc.inc_fibnum : RT_DEFAULT_FIB))
 		    != 0)
 			return (error);
 		KASSERT(ifp != NULL, ("%s: ifp is NULL", __func__));
-		/*
-		 * Determine the appropriate zone id of the source based on
-		 * the zone of the destination and the outgoing interface.
-		 */
-		odstzone = in6_getscopezone(ifp,
-		    in6_addrscope(&pi->ipi6_addr));
-
 		/* XXX: prison_local_ip6 can override pi->ipi6_addr */
 		if (cred != NULL && (error = prison_local_ip6(cred,
 		    &pi->ipi6_addr, (inp != NULL &&
 		    (inp->inp_flags & IN6P_IPV6_V6ONLY) != 0))) != 0)
 			return (error);
-
-		ia6 = in6ifa_ifwithaddr(&pi->ipi6_addr, odstzone);
-		if (ia6 == NULL ||
-		    (ia6->ia6_flags & (IN6_IFF_ANYCAST | IN6_IFF_NOTREADY))) {
-			if (ia6 != NULL)
-				ifa_free(&ia6->ia_ifa);
+		/*
+		 * Determine the appropriate zone id of the source based on
+		 * the zone of the destination and the outgoing interface.
+		 * Even if source address is explicitly specified, it can
+		 * not break the destination zone.
+		 */
+		ia = in6ifa_ifwithaddr(&pi->ipi6_addr, in6_getscopezone(
+		    ifp, in6_srcaddrscope(&dstsock.sin6_addr)));
+		if (ia == NULL ||
+		    (ia->ia6_flags & (IN6_IFF_ANYCAST | IN6_IFF_NOTREADY))) {
+			if (ia != NULL)
+				ifa_free(&ia->ia_ifa);
 			return (EADDRNOTAVAIL);
 		}
 		if (ifpp)
 			*ifpp = ifp;
-		bcopy(&ia6->ia_addr.sin6_addr, srcp, sizeof(*srcp));
-		ifa_free(&ia6->ia_ifa);
+		bcopy(IA6_IN6(ia), srcp, sizeof(*srcp));
+		ifa_free(&ia->ia_ifa);
 		return (0);
 	}
-
 	/*
 	 * Otherwise, if the socket has already bound the source, just use it.
 	 */
@@ -271,14 +378,12 @@ in6_selectsrc(struct sockaddr_in6 *dstsock, struct ip6_pktopts *opts,
 		bcopy(&inp->in6p_laddr, srcp, sizeof(*srcp));
 		return (0);
 	}
-
 	/*
 	 * Bypass source address selection and use the primary jail IP
 	 * if requested.
 	 */
 	if (cred != NULL && !prison_saddrsel_ip6(cred, srcp))
 		return (0);
-
 	/*
 	 * If the address is not specified, choose the best one based on
 	 * the outgoing interface and the destination address.
@@ -287,199 +392,45 @@ in6_selectsrc(struct sockaddr_in6 *dstsock, struct ip6_pktopts *opts,
 	if ((error = in6_selectif(dstsock, opts, mopts, ro, &ifp, oifp,
 	    (inp != NULL) ? inp->inp_inc.inc_fibnum : RT_DEFAULT_FIB)) != 0)
 		return (error);
-
-#ifdef DIAGNOSTIC
-	if (ifp == NULL)	/* this should not happen */
-		panic("in6_selectsrc: NULL ifp");
-#endif
-	error = in6_setscope(&dst, ifp, &odstzone);
-	if (error)
-		return (error);
-
-	IN6_IFADDR_RLOCK();
-	TAILQ_FOREACH(ia, &V_in6_ifaddrhead, ia_link) {
-		int new_scope = -1, new_matchlen = -1;
-		struct in6_addrpolicy *new_policy = NULL;
-		u_int32_t srczone, osrczone, dstzone;
-		struct in6_addr src;
-		struct ifnet *ifp1 = ia->ia_ifp;
-
-		/*
-		 * We'll never take an address that breaks the scope zone
-		 * of the destination.  We also skip an address if its zone
-		 * does not contain the outgoing interface.
-		 * XXX: we should probably use sin6_scope_id here.
-		 */
-		if (in6_setscope(&dst, ifp1, &dstzone) ||
-		    odstzone != dstzone) {
-			continue;
-		}
-		src = ia->ia_addr.sin6_addr;
-		if (in6_setscope(&src, ifp, &osrczone) ||
-		    in6_setscope(&src, ifp1, &srczone) ||
-		    osrczone != srczone) {
-			continue;
-		}
-
-		/* avoid unusable addresses */
-		if ((ia->ia6_flags &
-		     (IN6_IFF_NOTREADY | IN6_IFF_ANYCAST | IN6_IFF_DETACHED))) {
+	KASSERT(ifp != NULL, ("%s: ifp is NULL", __func__));
+	/*
+	 * RFC 6724 (section 4):
+	 * For all multicast and link-local destination addresses, the set of
+	 * candidate source addresses MUST only include addresses assigned to
+	 * interfaces belonging to the same link as the outgoing interface.
+	 */
+	dstprops.ifp = ifp;
+	dstprops.addr = &dstsock.sin6_addr;
+	dstprops.scope = in6_srcaddrscope(&dstsock.sin6_addr);
+	best.rule = -1;
+	best.ia = NULL;
+	if (IN6_IS_ADDR_MULTICAST(&dstsock.sin6_addr) ||
+	    dstprops.scope == IPV6_ADDR_SCOPE_LINKLOCAL) {
+		IF_ADDR_RLOCK(ifp);
+		TAILQ_FOREACH(ifa, &ifp->if_addrhead, ifa_link) {
+			if (ifa->ifa_addr->sa_family != AF_INET6)
 				continue;
+			ret = srcaddrcmp(&best, (struct in6_ifaddr*)ifa,
+			    &dstprops, cred, opts);
+			if (ret == 1)
+				break;
 		}
-		if (!V_ip6_use_deprecated && IFA6_IS_DEPRECATED(ia))
-			continue;
-
-		/* If jailed only take addresses of the jail into account. */
-		if (cred != NULL &&
-		    prison_check_ip6(cred, &ia->ia_addr.sin6_addr) != 0)
-			continue;
-
-		/* Rule 1: Prefer same address */
-		if (IN6_ARE_ADDR_EQUAL(&dst, &ia->ia_addr.sin6_addr)) {
-			ia_best = ia;
-			BREAK(1); /* there should be no better candidate */
+		if (best.rule >= 0)
+			ifa_ref(&best.ia->ia_ifa);
+		IF_ADDR_RUNLOCK(ifp);
+	} else {
+		IN6_IFADDR_RLOCK();
+		TAILQ_FOREACH(ia, &V_in6_ifaddrhead, ia_link) {
+			ret = srcaddrcmp(&best, ia, &dstprops, cred, opts);
+			if (ret == 1)
+				break;
 		}
-
-		if (ia_best == NULL)
-			REPLACE(0);
-
-		/* Rule 2: Prefer appropriate scope */
-		if (dst_scope < 0)
-			dst_scope = in6_addrscope(&dst);
-		new_scope = in6_addrscope(&ia->ia_addr.sin6_addr);
-		if (IN6_ARE_SCOPE_CMP(best_scope, new_scope) < 0) {
-			if (IN6_ARE_SCOPE_CMP(best_scope, dst_scope) < 0)
-				REPLACE(2);
-			NEXT(2);
-		} else if (IN6_ARE_SCOPE_CMP(new_scope, best_scope) < 0) {
-			if (IN6_ARE_SCOPE_CMP(new_scope, dst_scope) < 0)
-				NEXT(2);
-			REPLACE(2);
-		}
-
-		/*
-		 * Rule 3: Avoid deprecated addresses.  Note that the case of
-		 * !ip6_use_deprecated is already rejected above.
-		 */
-		if (!IFA6_IS_DEPRECATED(ia_best) && IFA6_IS_DEPRECATED(ia))
-			NEXT(3);
-		if (IFA6_IS_DEPRECATED(ia_best) && !IFA6_IS_DEPRECATED(ia))
-			REPLACE(3);
-
-		/* Rule 4: Prefer home addresses */
-		/*
-		 * XXX: This is a TODO.  We should probably merge the MIP6
-		 * case above.
-		 */
-
-		/* Rule 5: Prefer outgoing interface */
-		if (!(ND_IFINFO(ifp)->flags & ND6_IFF_NO_PREFER_IFACE)) {
-			if (ia_best->ia_ifp == ifp && ia->ia_ifp != ifp)
-				NEXT(5);
-			if (ia_best->ia_ifp != ifp && ia->ia_ifp == ifp)
-				REPLACE(5);
-		}
-
-		/*
-		 * Rule 6: Prefer matching label
-		 * Note that best_policy should be non-NULL here.
-		 */
-		if (dst_policy == NULL)
-			dst_policy = lookup_addrsel_policy(dstsock);
-		if (dst_policy->label != ADDR_LABEL_NOTAPP) {
-			new_policy = lookup_addrsel_policy(&ia->ia_addr);
-			if (dst_policy->label == best_policy->label &&
-			    dst_policy->label != new_policy->label)
-				NEXT(6);
-			if (dst_policy->label != best_policy->label &&
-			    dst_policy->label == new_policy->label)
-				REPLACE(6);
-		}
-
-		/*
-		 * Rule 7: Prefer public addresses.
-		 * We allow users to reverse the logic by configuring
-		 * a sysctl variable, so that privacy conscious users can
-		 * always prefer temporary addresses.
-		 */
-		if (opts == NULL ||
-		    opts->ip6po_prefer_tempaddr == IP6PO_TEMPADDR_SYSTEM) {
-			prefer_tempaddr = V_ip6_prefer_tempaddr;
-		} else if (opts->ip6po_prefer_tempaddr ==
-		    IP6PO_TEMPADDR_NOTPREFER) {
-			prefer_tempaddr = 0;
-		} else
-			prefer_tempaddr = 1;
-		if (!(ia_best->ia6_flags & IN6_IFF_TEMPORARY) &&
-		    (ia->ia6_flags & IN6_IFF_TEMPORARY)) {
-			if (prefer_tempaddr)
-				REPLACE(7);
-			else
-				NEXT(7);
-		}
-		if ((ia_best->ia6_flags & IN6_IFF_TEMPORARY) &&
-		    !(ia->ia6_flags & IN6_IFF_TEMPORARY)) {
-			if (prefer_tempaddr)
-				NEXT(7);
-			else
-				REPLACE(7);
-		}
-
-		/*
-		 * Rule 8: prefer addresses on alive interfaces.
-		 * This is a KAME specific rule.
-		 */
-		if ((ia_best->ia_ifp->if_flags & IFF_UP) &&
-		    !(ia->ia_ifp->if_flags & IFF_UP))
-			NEXT(8);
-		if (!(ia_best->ia_ifp->if_flags & IFF_UP) &&
-		    (ia->ia_ifp->if_flags & IFF_UP))
-			REPLACE(8);
-
-		/*
-		 * Rule 14: Use longest matching prefix.
-		 * Note: in the address selection draft, this rule is
-		 * documented as "Rule 8".  However, since it is also
-		 * documented that this rule can be overridden, we assign
-		 * a large number so that it is easy to assign smaller numbers
-		 * to more preferred rules.
-		 */
-		new_matchlen = in6_matchlen(&ia->ia_addr.sin6_addr, &dst);
-		if (best_matchlen < new_matchlen)
-			REPLACE(14);
-		if (new_matchlen < best_matchlen)
-			NEXT(14);
-
-		/* Rule 15 is reserved. */
-
-		/*
-		 * Last resort: just keep the current candidate.
-		 * Or, do we need more rules?
-		 */
-		continue;
-
-	  replace:
-		ia_best = ia;
-		best_scope = (new_scope >= 0 ? new_scope :
-			      in6_addrscope(&ia_best->ia_addr.sin6_addr));
-		best_policy = (new_policy ? new_policy :
-			       lookup_addrsel_policy(&ia_best->ia_addr));
-		best_matchlen = (new_matchlen >= 0 ? new_matchlen :
-				 in6_matchlen(&ia_best->ia_addr.sin6_addr,
-					      &dst));
-
-	  next:
-		continue;
-
-	  out:
-		break;
-	}
-
-	if ((ia = ia_best) == NULL) {
+		if (best.rule >= 0)
+			ifa_ref(&best.ia->ia_ifa);
 		IN6_IFADDR_RUNLOCK();
-		return (EADDRNOTAVAIL);
 	}
-
+	if (best.rule < 0)
+		return (EADDRNOTAVAIL);
 	/*
 	 * At this point at least one of the addresses belonged to the jail
 	 * but it could still be, that we want to further restrict it, e.g.
@@ -490,17 +441,15 @@ in6_selectsrc(struct sockaddr_in6 *dstsock, struct ip6_pktopts *opts,
 	 * Use tmp to not change ::1 on lo0 to the primary jail address.
 	 */
 	tmp = ia->ia_addr.sin6_addr;
+	ifa_free(&ia->ia_ifa);
 	if (cred != NULL && prison_local_ip6(cred, &tmp, (inp != NULL &&
 	    (inp->inp_flags & IN6P_IPV6_V6ONLY) != 0)) != 0) {
-		IN6_IFADDR_RUNLOCK();
 		return (EADDRNOTAVAIL);
 	}
-
 	if (ifpp)
 		*ifpp = ifp;
-
+	V_ip6stat.ip6s_sources_rule[best.rule]++;
 	bcopy(&tmp, srcp, sizeof(*srcp));
-	IN6_IFADDR_RUNLOCK();
 	return (0);
 }
 
@@ -1181,4 +1130,11 @@ in6_srcaddrscope(const struct in6_addr *addr)
 			return (IPV6_ADDR_SCOPE_LINKLOCAL);
 	}
 	return (in6_addrscope(addr));
+}
+
+static int
+lookup_policy_label(const struct sockaddr_in6 *sa6)
+{
+
+	return (lookup_addrsel_policy(sa6)->label);
 }
