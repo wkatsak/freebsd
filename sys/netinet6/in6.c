@@ -1918,7 +1918,7 @@ in6ifa_ifwithaddr(const struct in6_addr *addr, uint32_t zoneid)
 			if (zoneid != 0 &&
 			    zoneid != ia->ia_addr.sin6_scope_id)
 				continue;
-			ifa_ref(ia);
+			ifa_ref(&ia->ia_ifa);
 			break;
 		}
 	}
