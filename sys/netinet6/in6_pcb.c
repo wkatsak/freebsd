@@ -179,11 +179,11 @@ in6_pcbbind(register struct inpcb *inp, struct sockaddr *nam,
 			 */
 			if (ifa != NULL && ifa->ia6_flags &
 			    (IN6_IFF_ANYCAST|IN6_IFF_NOTREADY|IN6_IFF_DETACHED)) {
-				ifa_free(ifa);
+				ifa_free(&ifa->ia_ifa);
 				return (EADDRNOTAVAIL);
 			}
 			if (ifa != NULL)
-				ifa_free(ifa);
+				ifa_free(&ifa->ia_ifa);
 		}
 		if (lport) {
 			struct inpcb *t;
@@ -312,7 +312,6 @@ in6_pcbladdr(register struct inpcb *inp, struct sockaddr *nam,
 	register struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)nam;
 	int error = 0;
 	struct ifnet *ifp = NULL;
-	int scope_ambiguous = 0;
 	struct in6_addr in6a;
 
 	INP_WLOCK_ASSERT(inp);
@@ -324,12 +323,6 @@ in6_pcbladdr(register struct inpcb *inp, struct sockaddr *nam,
 		return (EAFNOSUPPORT);
 	if (sin6->sin6_port == 0)
 		return (EADDRNOTAVAIL);
-
-	if (sin6->sin6_scope_id == 0 && !V_ip6_use_defzone)
-		scope_ambiguous = 1;
-	if ((error = sa6_embedscope(sin6, V_ip6_use_defzone)) != 0)
-		return(error);
-
 	if (!TAILQ_EMPTY(&V_in6_ifaddrhead)) {
 		/*
 		 * If the destination address is UNSPECIFIED addr,
@@ -338,6 +331,9 @@ in6_pcbladdr(register struct inpcb *inp, struct sockaddr *nam,
 		if (IN6_IS_ADDR_UNSPECIFIED(&sin6->sin6_addr))
 			sin6->sin6_addr = in6addr_loopback;
 	}
+	error = sa6_checkzone(sin6);
+	if (error != 0)
+		return (error);
 	if ((error = prison_remote_ip6(inp->inp_cred, &sin6->sin6_addr)) != 0)
 		return (error);
 
@@ -345,12 +341,6 @@ in6_pcbladdr(register struct inpcb *inp, struct sockaddr *nam,
 	    inp, NULL, inp->inp_cred, &ifp, &in6a);
 	if (error)
 		return (error);
-
-	if (ifp && scope_ambiguous &&
-	    (error = in6_setscope(&sin6->sin6_addr, ifp, NULL)) != 0) {
-		return(error);
-	}
-
 	/*
 	 * Do not update this earlier, in case we return with an error.
 	 *
@@ -359,13 +349,11 @@ in6_pcbladdr(register struct inpcb *inp, struct sockaddr *nam,
 	 * Is it the intended behavior?
 	 */
 	*plocal_addr6 = in6a;
-
 	/*
 	 * Don't do pcblookup call here; return interface in
 	 * plocal_addr6
 	 * and exit to caller, that will do the lookup.
 	 */
-
 	return (0);
 }
 
