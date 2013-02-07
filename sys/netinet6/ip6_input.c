@@ -769,14 +769,7 @@ passin:
 		 * found the loopback route to the interface address
 		 */
 		if (rin6.ro_rt->rt_gateway->sa_family == AF_LINK) {
-			struct sockaddr_in6 dest6;
-
-			bzero(&dest6, sizeof(dest6));
-			dest6.sin6_family = AF_INET6;
-			dest6.sin6_len = sizeof(dest6);
-			dest6.sin6_addr = ip6->ip6_dst;
-			ia6 = (struct in6_ifaddr *)
-			    ifa_ifwithaddr((struct sockaddr *)&dest6);
+			ia6 = in6ifa_ifwithaddr(&ip6->ip6_dst, 0);
 			if (ia6 == NULL)
 				goto bad;
 			free_ia6 = 1;
