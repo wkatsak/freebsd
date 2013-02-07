@@ -653,18 +653,10 @@ ip6_input(struct mbuf *m)
 passin:
 	/*
 	 * Disambiguate address scope zones (if there is ambiguity).
-	 * We first make sure that the original source or destination address
-	 * is not in our internal form for scoped addresses.  Such addresses
-	 * are not necessarily invalid spec-wise, but we cannot accept them due
-	 * to the usage conflict.
 	 * in6_setscope() then also checks and rejects the cases where src or
 	 * dst are the loopback address and the receiving interface
 	 * is not loopback.
 	 */
-	if (in6_clearscope(&ip6->ip6_src) || in6_clearscope(&ip6->ip6_dst)) {
-		V_ip6stat.ip6s_badscope++; /* XXX */
-		goto bad;
-	}
 	if (in6_setscope(&ip6->ip6_src, m->m_pkthdr.rcvif, NULL) ||
 	    in6_setscope(&ip6->ip6_dst, m->m_pkthdr.rcvif, NULL)) {
 		V_ip6stat.ip6s_badscope++;
