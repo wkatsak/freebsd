@@ -708,6 +708,7 @@ passin:
 		ia->ia_ifa.if_ibytes += m->m_pkthdr.len;
 		/* record address information into m_tag. */
 		ip6_setdstifaddr(m, ia);
+		ifa_free(&ia->ia_ifa);
 		deliverifp = m->m_pkthdr.rcvif;
 		ours = 1;
 		goto hbhcheck;
