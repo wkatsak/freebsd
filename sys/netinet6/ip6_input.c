@@ -424,9 +424,11 @@ ip6_input(struct mbuf *m)
 	struct ifnet *deliverifp = NULL, *ifp = NULL;
 	struct in6_addr odst;
 	struct route_in6 rin6;
+	struct in6_ifaddr *ia;
 	int srcrt = 0;
 	struct llentry *lle = NULL;
 	struct sockaddr_in6 dst6, *dst;
+	int srcscope, dstscope;
 
 	bzero(&rin6, sizeof(struct route_in6));
 #ifdef IPSEC
@@ -661,64 +663,37 @@ passin:
 		deliverifp = m->m_pkthdr.rcvif;
 		goto hbhcheck;
 	}
-
-	/*
-	 * Disambiguate address scope zones (if there is ambiguity).
-	 * in6_setscope() then also checks and rejects the cases where src or
-	 * dst are the loopback address and the receiving interface
-	 * is not loopback.
-	 */
-	if (in6_setscope(&ip6->ip6_src, m->m_pkthdr.rcvif, NULL) ||
-	    in6_setscope(&ip6->ip6_dst, m->m_pkthdr.rcvif, NULL)) {
-		V_ip6stat.ip6s_badscope++;
-		goto bad;
-	}
-
 	/*
 	 *  Unicast check
 	 */
-
-	bzero(&dst6, sizeof(dst6));
-	dst6.sin6_family = AF_INET6;
-	dst6.sin6_len = sizeof(struct sockaddr_in6);
-	dst6.sin6_addr = ip6->ip6_dst;
-	ifp = m->m_pkthdr.rcvif;
-	IF_AFDATA_RLOCK(ifp);
-	lle = lla_lookup(LLTABLE6(ifp), 0,
-	     (struct sockaddr *)&dst6);
-	IF_AFDATA_RUNLOCK(ifp);
-	if ((lle != NULL) && (lle->la_flags & LLE_IFADDR)) {
-		struct ifaddr *ifa;
-		struct in6_ifaddr *ia6;
-		int bad;
-
-		bad = 1;
-#define	sa_equal(a1, a2)						\
-	(bcmp((a1), (a2), ((a1))->sin6_len) == 0)
-		IF_ADDR_RLOCK(ifp);
-		TAILQ_FOREACH(ifa, &ifp->if_addrhead, ifa_link) {
-			if (ifa->ifa_addr->sa_family != dst6.sin6_family)
-				continue;
-			if (sa_equal(&dst6, ifa->ifa_addr))
-				break;
+	srcscope = in6_addrscope(&ip6->ip6_src);
+	dstscope = in6_addrscope(&ip6->ip6_dst);
+	if (srcscope == IPV6_ADDR_SCOPE_LINKLOCAL &&
+	    IN6_IS_ADDR_LOOPBACK(&ip6->ip6_src)) {
+		/*
+		 * Packets with the loopback source address must be
+		 * received on the loopback interface.
+		 */
+		if (m->m_pkthdr.rcvif != V_loif) {
+			V_ip6stat.ip6s_badscope++;
+			goto bad;
 		}
-		KASSERT(ifa != NULL, ("%s: ifa not found for lle %p",
-		    __func__, lle));
-#undef sa_equal
-
-		ia6 = (struct in6_ifaddr *)ifa;
-		if (!(ia6->ia6_flags & IN6_IFF_NOTREADY)) {
-			/* Count the packet in the ip address stats */
-			ia6->ia_ifa.if_ipackets++;
-			ia6->ia_ifa.if_ibytes += m->m_pkthdr.len;
-
-			/*
-			 * record address information into m_tag.
-			 */
-			(void)ip6_setdstifaddr(m, ia6);
-
-			bad = 0;
-		} else {
+	}
+	ia = in6ifa_ifwithaddr(&ip6->ip6_dst,
+	    in6_getscopezone(m->m_pkthdr.rcvif, dstscope));
+	if (ia == NULL) {
+	       if (dstscope == IPV6_ADDR_SCOPE_LINKLOCAL) {
+		       /*
+			* This means that the receiving interface doesn't
+			* have this link-local address configured.
+			* This also covers the loopback destination address.
+			*/
+		       V_ip6stat.ip6s_badscope++;
+		       goto bad;
+	       }
+	       /* FALLTHROUGH */
+	} else {
+		if (ia->ia6_flags & IN6_IFF_NOTREADY) {
 			char ip6bufs[INET6_ADDRSTRLEN];
 			char ip6bufd[INET6_ADDRSTRLEN];
 			/* address is not ready, so discard the packet. */
@@ -726,19 +701,17 @@ passin:
 			    "ip6_input: packet to an unready address %s->%s\n",
 			    ip6_sprintf(ip6bufs, &ip6->ip6_src),
 			    ip6_sprintf(ip6bufd, &ip6->ip6_dst)));
-		}
-		IF_ADDR_RUNLOCK(ifp);
-		LLE_RUNLOCK(lle);
-		if (bad)
 			goto bad;
-		else {
-			ours = 1;
-			deliverifp = ifp;
-			goto hbhcheck;
 		}
+		/* Count the packet in the ip address stats */
+		ia->ia_ifa.if_ipackets++;
+		ia->ia_ifa.if_ibytes += m->m_pkthdr.len;
+		/* record address information into m_tag. */
+		ip6_setdstifaddr(m, ia);
+		deliverifp = m->m_pkthdr.rcvif;
+		ours = 1;
+		goto hbhcheck;
 	}
-	if (lle != NULL)
-		LLE_RUNLOCK(lle);
 
 	dst = &rin6.ro_dst;
 	dst->sin6_len = sizeof(struct sockaddr_in6);
