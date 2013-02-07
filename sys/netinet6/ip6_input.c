@@ -793,7 +793,7 @@ passin:
 			/* Count the packet in the ip address stats */
 			ia6->ia_ifa.if_ipackets++;
 			ia6->ia_ifa.if_ibytes += m->m_pkthdr.len;
-			if (ia6 != NULL && free_ia6 != 0)
+			if (free_ia6 != 0)
 				ifa_free(&ia6->ia_ifa);
 			goto hbhcheck;
 		} else {
