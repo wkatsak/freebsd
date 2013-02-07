@@ -1305,7 +1305,6 @@ ip6_savecontrol_v4(struct inpcb *inp, struct mbuf *m, struct mbuf **mp,
 #endif
 		} else {	
 			bcopy(&ip6->ip6_dst, &pi6.ipi6_addr, sizeof(struct in6_addr));
-			in6_clearscope(&pi6.ipi6_addr);	/* XXX */
 		}
 		pi6.ipi6_ifindex =
 		    (m && m->m_pkthdr.rcvif) ? m->m_pkthdr.rcvif->if_index : 0;
@@ -1576,13 +1575,8 @@ ip6_notify_pmtu(struct inpcb *in6p, struct sockaddr_in6 *dst, u_int32_t *mtu)
 	if (so == NULL)		/* I believe this is impossible */
 		panic("ip6_notify_pmtu: socket is NULL");
 #endif
-
-	bzero(&mtuctl, sizeof(mtuctl));	/* zero-clear for safety */
 	mtuctl.ip6m_mtu = *mtu;
 	mtuctl.ip6m_addr = *dst;
-	if (sa6_recoverscope(&mtuctl.ip6m_addr))
-		return;
-
 	if ((m_mtu = sbcreatecontrol((caddr_t)&mtuctl, sizeof(mtuctl),
 	    IPV6_PATHMTU, IPPROTO_IPV6)) == NULL)
 		return;
