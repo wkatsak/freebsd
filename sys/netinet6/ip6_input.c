@@ -653,6 +653,18 @@ ip6_input(struct mbuf *m)
 	}
 
 passin:
+	srcscope = in6_addrscope(&ip6->ip6_src);
+	if (srcscope == IPV6_ADDR_SCOPE_LINKLOCAL &&
+	    IN6_IS_ADDR_LOOPBACK(&ip6->ip6_src)) {
+		/*
+		 * Packets with the loopback source address must be
+		 * received on the loopback interface.
+		 */
+		if (m->m_pkthdr.rcvif != V_loif) {
+			V_ip6stat.ip6s_badscope++;
+			goto bad;
+		}
+	}
 	/*
 	 * Multicast check. Assume packet is for us to avoid
 	 * prematurely taking locks.
@@ -666,19 +678,7 @@ passin:
 	/*
 	 *  Unicast check
 	 */
-	srcscope = in6_addrscope(&ip6->ip6_src);
 	dstscope = in6_addrscope(&ip6->ip6_dst);
-	if (srcscope == IPV6_ADDR_SCOPE_LINKLOCAL &&
-	    IN6_IS_ADDR_LOOPBACK(&ip6->ip6_src)) {
-		/*
-		 * Packets with the loopback source address must be
-		 * received on the loopback interface.
-		 */
-		if (m->m_pkthdr.rcvif != V_loif) {
-			V_ip6stat.ip6s_badscope++;
-			goto bad;
-		}
-	}
 	ia = in6ifa_ifwithaddr(&ip6->ip6_dst,
 	    in6_getscopezone(m->m_pkthdr.rcvif, dstscope));
 	if (ia == NULL) {
@@ -701,6 +701,7 @@ passin:
 			    "ip6_input: packet to an unready address %s->%s\n",
 			    ip6_sprintf(ip6bufs, &ip6->ip6_src),
 			    ip6_sprintf(ip6bufd, &ip6->ip6_dst)));
+			ifa_free(&ia->ia_ifa);
 			goto bad;
 		}
 		/* Count the packet in the ip address stats */
