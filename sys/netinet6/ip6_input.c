@@ -652,6 +652,17 @@ ip6_input(struct mbuf *m)
 
 passin:
 	/*
+	 * Multicast check. Assume packet is for us to avoid
+	 * prematurely taking locks.
+	 */
+	if (IN6_IS_ADDR_MULTICAST(&ip6->ip6_dst)) {
+		ours = 1;
+		in6_ifstat_inc(m->m_pkthdr.rcvif, ifs6_in_mcast);
+		deliverifp = m->m_pkthdr.rcvif;
+		goto hbhcheck;
+	}
+
+	/*
 	 * Disambiguate address scope zones (if there is ambiguity).
 	 * in6_setscope() then also checks and rejects the cases where src or
 	 * dst are the loopback address and the receiving interface
@@ -661,17 +672,6 @@ passin:
 	    in6_setscope(&ip6->ip6_dst, m->m_pkthdr.rcvif, NULL)) {
 		V_ip6stat.ip6s_badscope++;
 		goto bad;
-	}
-
-	/*
-	 * Multicast check. Assume packet is for us to avoid
-	 * prematurely taking locks.
-	 */
-	if (IN6_IS_ADDR_MULTICAST(&ip6->ip6_dst)) {
-		ours = 1;
-		in6_ifstat_inc(m->m_pkthdr.rcvif, ifs6_in_mcast);
-		deliverifp = m->m_pkthdr.rcvif;
-		goto hbhcheck;
 	}
 
 	/*
