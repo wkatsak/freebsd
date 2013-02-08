@@ -255,6 +255,7 @@ struct	ip6stat {
  * XXX do not make it a kitchen sink!
  */
 struct ip6aux {
+#if 0
 	u_int32_t ip6a_flags;
 #define IP6A_SWAP	0x01		/* swapped home/care-of on packet */
 #define IP6A_HASEEN	0x02		/* HA was present */
@@ -266,11 +267,12 @@ struct ip6aux {
 	struct in6_addr ip6a_home;	/* home address of the peer */
 	u_int16_t	ip6a_bruid;	/* BR unique identifier */
 
-	/* ip6.ip6_dst */
-	struct in6_ifaddr *ip6a_dstia6;	/* my ifaddr that matches ip6_dst */
-
 	/* rtalert */
 	u_int16_t ip6a_rtalert;		/* rtalert option value */
+#endif
+	/* ip6.ip6_dst */
+	struct in6_addr ip6a_dst;	/* address that matches ip6_dst */
+	uint32_t	ip6a_dstzone;	/* zone id */
 
 	/*
 	 * decapsulation history will be here.
