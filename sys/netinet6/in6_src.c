@@ -614,8 +614,6 @@ selectroute(struct sockaddr_in6 *dstsock, struct ip6_pktopts *opts,
 			bzero(&ro->ro_dst, sizeof(struct sockaddr_in6));
 			sa6 = (struct sockaddr_in6 *)&ro->ro_dst;
 			*sa6 = *dstsock;
-			sa6->sin6_scope_id = 0;
-
 #ifdef RADIX_MPATH
 				rtalloc_mpath_fib((struct route *)ro,
 				    ntohl(sa6->sin6_addr.s6_addr32[3]), fibnum);
