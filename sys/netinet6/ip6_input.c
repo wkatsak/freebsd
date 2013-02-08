@@ -147,7 +147,7 @@ struct rwlock in6_ifaddr_lock;
 RW_SYSINIT(in6_ifaddr_lock, &in6_ifaddr_lock, "in6_ifaddr_lock");
 
 static void ip6_init2(void *);
-static struct ip6aux *ip6_setdstifaddr(struct mbuf *, struct in6_ifaddr *);
+static struct ip6aux *ip6_savedstinfo(struct mbuf *, struct in6_addr *, uint32_t);
 static struct ip6aux *ip6_addaux(struct mbuf *);
 static struct ip6aux *ip6_findaux(struct mbuf *m);
 static void ip6_delaux (struct mbuf *);
@@ -428,6 +428,7 @@ ip6_input(struct mbuf *m)
 	int srcrt = 0;
 	struct llentry *lle = NULL;
 	struct sockaddr_in6 dst6, *dst;
+	struct ip6aux *aux;
 	int srcscope, dstscope;
 
 	bzero(&rin6, sizeof(struct route_in6));
@@ -446,6 +447,7 @@ ip6_input(struct mbuf *m)
 	/*
 	 * make sure we don't have onion peering information into m_tag.
 	 */
+	aux = NULL;
 	ip6_delaux(m);
 
 	if (m->m_flags & M_FASTFWD_OURS) {
@@ -707,10 +709,11 @@ passin:
 		/* Count the packet in the ip address stats */
 		ia->ia_ifa.if_ipackets++;
 		ia->ia_ifa.if_ibytes += m->m_pkthdr.len;
-		/* record address information into m_tag. */
-		ip6_setdstifaddr(m, ia);
 		ifa_free(&ia->ia_ifa);
 		deliverifp = m->m_pkthdr.rcvif;
+		/* record address information into m_tag. */
+		aux = ip6_savedstinfo(m, &ip6->ip6_dst,
+		    in6_getscopezone(deliverifp, dstscope));
 		ours = 1;
 		goto hbhcheck;
 	}
@@ -765,38 +768,34 @@ passin:
 #endif
 	    rin6.ro_rt->rt_ifp->if_type == IFT_LOOP) {
 		int free_ia6 = 0;
-		struct in6_ifaddr *ia6;
-
 		/*
 		 * found the loopback route to the interface address
 		 */
 		if (rin6.ro_rt->rt_gateway->sa_family == AF_LINK) {
-			ia6 = in6ifa_ifwithaddr(&ip6->ip6_dst, 0);
-			if (ia6 == NULL)
+			ia = in6ifa_ifwithaddr(&ip6->ip6_dst, 0 /* XXX */);
+			if (ia == NULL)
 				goto bad;
 			free_ia6 = 1;
 		}
 		else
-			ia6 = (struct in6_ifaddr *)rin6.ro_rt->rt_ifa;
-
-		/*
-		 * record address information into m_tag.
-		 */
-		(void)ip6_setdstifaddr(m, ia6);
+			ia = (struct in6_ifaddr *)rin6.ro_rt->rt_ifa;
 
 		/*
 		 * packets to a tentative, duplicated, or somehow invalid
 		 * address must not be accepted.
 		 */
-		if (!(ia6->ia6_flags & IN6_IFF_NOTREADY)) {
+		if (!(ia->ia6_flags & IN6_IFF_NOTREADY)) {
 			/* this address is ready */
 			ours = 1;
-			deliverifp = ia6->ia_ifp;	/* correct? */
+			deliverifp = ia->ia_ifp;	/* correct? */
 			/* Count the packet in the ip address stats */
-			ia6->ia_ifa.if_ipackets++;
-			ia6->ia_ifa.if_ibytes += m->m_pkthdr.len;
+			ia->ia_ifa.if_ipackets++;
+			ia->ia_ifa.if_ibytes += m->m_pkthdr.len;
+			/* record address information into m_tag. */
+			aux = ip6_savedstinfo(m, &ip6->ip6_dst,
+			    in6_getscopezone(deliverifp, dstscope));
 			if (free_ia6 != 0)
-				ifa_free(&ia6->ia_ifa);
+				ifa_free(&ia->ia_ifa);
 			goto hbhcheck;
 		} else {
 			char ip6bufs[INET6_ADDRSTRLEN];
@@ -807,8 +806,8 @@ passin:
 			    ip6_sprintf(ip6bufs, &ip6->ip6_src),
 			    ip6_sprintf(ip6bufd, &ip6->ip6_dst)));
 
-			if (ia6 != NULL && free_ia6 != 0)
-				ifa_free(&ia6->ia_ifa);
+			if (free_ia6 != 0)
+				ifa_free(&ia->ia_ifa);
 			goto bad;
 		}
 	}
@@ -843,23 +842,20 @@ passin:
 	 * as our interface address (e.g. multicast addresses, addresses
 	 * within FAITH prefixes and such).
 	 */
-	if (deliverifp) {
-		struct in6_ifaddr *ia6;
-
- 		if ((ia6 = ip6_getdstifaddr(m)) != NULL) {
-			ifa_free(&ia6->ia_ifa);
-		} else {
-			ia6 = in6_ifawithifp(deliverifp, &ip6->ip6_dst);
-			if (ia6) {
-				if (!ip6_setdstifaddr(m, ia6)) {
-					/*
-					 * XXX maybe we should drop the packet here,
-					 * as we could not provide enough information
-					 * to the upper layers.
-					 */
-				}
-				ifa_free(&ia6->ia_ifa);
+	if (deliverifp != NULL && aux == NULL) {
+		ia = in6_ifawithifp(deliverifp, &ip6->ip6_dst);
+		if (ia != NULL) {
+			dstscope = in6_addrscope(&ip6->ip6_dst);
+			aux = ip6_savedstinfo(m, &ip6->ip6_dst,
+			    in6_getscopezone(deliverifp, dstscope));
+			if (aux == NULL) {
+				/*
+				 * XXX maybe we should drop the packet here,
+				 * as we could not provide enough information
+				 * to the upper layers.
+				 */
 			}
+			ifa_free(&ia->ia_ifa);
 		}
 	}
 
@@ -1002,29 +998,28 @@ out:
  * we just bump the ia refcount when we receive it.  This should be fixed.
  */
 static struct ip6aux *
-ip6_setdstifaddr(struct mbuf *m, struct in6_ifaddr *ia6)
+ip6_savedstinfo(struct mbuf *m, struct in6_addr *addr, uint32_t zoneid)
 {
 	struct ip6aux *ip6a;
 
 	ip6a = ip6_addaux(m);
-	if (ip6a)
-		ip6a->ip6a_dstia6 = ia6;
-	return ip6a;	/* NULL if failed to set */
+	if (ip6a != NULL) {
+		ip6a->ip6a_dst = *addr;
+		ip6a->ip6a_dstzone = zoneid;
+	}
+	return (ip6a);	/* NULL if failed to set */
 }
 
 struct in6_ifaddr *
 ip6_getdstifaddr(struct mbuf *m)
 {
 	struct ip6aux *ip6a;
-	struct in6_ifaddr *ia;
 
 	ip6a = ip6_findaux(m);
-	if (ip6a) {
-		ia = ip6a->ip6a_dstia6;
-		ifa_ref(&ia->ia_ifa);
-		return ia;
-	} else
-		return NULL;
+	if (ip6a != NULL)
+		return (in6ifa_ifwithaddr(&ip6a->ip6a_dst,
+		    ip6a->ip6a_dstzone));
+	return (NULL);
 }
 
 /*
