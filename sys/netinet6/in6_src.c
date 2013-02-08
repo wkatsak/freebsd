@@ -611,7 +611,6 @@ selectroute(struct sockaddr_in6 *dstsock, struct ip6_pktopts *opts,
 			struct sockaddr_in6 *sa6;
 
 			/* No route yet, so try to acquire one */
-			bzero(&ro->ro_dst, sizeof(struct sockaddr_in6));
 			sa6 = (struct sockaddr_in6 *)&ro->ro_dst;
 			*sa6 = *dstsock;
 #ifdef RADIX_MPATH
