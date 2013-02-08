@@ -538,11 +538,6 @@ selectroute(struct sockaddr_in6 *dstsock, struct ip6_pktopts *opts,
 		if (ron->ro_rt == NULL) {
 			in6_rtalloc(ron, fibnum); /* multi path case? */
 			if (ron->ro_rt == NULL) {
-				/* XXX-BZ WT.? */
-				if (ron->ro_rt) {
-					RTFREE(ron->ro_rt);
-					ron->ro_rt = NULL;
-				}
 				error = EHOSTUNREACH;
 				goto done;
 			} 
