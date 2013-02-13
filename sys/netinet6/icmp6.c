@@ -1254,6 +1254,7 @@ icmp6_mtudisc_update(struct ip6ctlparam *ip6cp, int validated)
 /*
  * Process a Node Information Query packet, based on
  * draft-ietf-ipngwg-icmp-name-lookups-07.
+ * XXX: RFC 4620
  *
  * Spec incompatibilities:
  * - IPv6 Subject address handling
@@ -1392,8 +1393,6 @@ ni6_input(struct mbuf *m, int off)
 			/* m_pulldown instead of copy? */
 			m_copydata(m, off + sizeof(struct icmp6_nodeinfo),
 			    subjlen, (caddr_t)&in6_subj);
-			if (in6_setscope(&in6_subj, m->m_pkthdr.rcvif, NULL))
-				goto bad;
 
 			subj = (char *)&in6_subj;
 			if (IN6_ARE_ADDR_EQUAL(&ip6->ip6_dst, &in6_subj))
@@ -1966,7 +1965,6 @@ ni6_store_addrs(struct icmp6_nodeinfo *ni6, struct icmp6_nodeinfo *nni6,
 			/* copy the address itself */
 			bcopy(&ifa6->ia_addr.sin6_addr, cp,
 			    sizeof(struct in6_addr));
-			in6_clearscope((struct in6_addr *)cp); /* XXX */
 			cp += sizeof(struct in6_addr);
 
 			resid -= (sizeof(struct in6_addr) + sizeof(u_int32_t));
