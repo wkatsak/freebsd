@@ -222,28 +222,11 @@ void
 icmp6_error2(struct mbuf *m, int type, int code, int param,
     struct ifnet *ifp)
 {
-	struct ip6_hdr *ip6;
 
 	if (ifp == NULL)
 		return;
 
-#ifndef PULLDOWN_TEST
-	IP6_EXTHDR_CHECK(m, 0, sizeof(struct ip6_hdr), );
-#else
-	if (m->m_len < sizeof(struct ip6_hdr)) {
-		m = m_pullup(m, sizeof(struct ip6_hdr));
-		if (m == NULL)
-			return;
-	}
-#endif
-
-	ip6 = mtod(m, struct ip6_hdr *);
-
-	if (in6_setscope(&ip6->ip6_src, ifp, NULL) != 0)
-		return;
-	if (in6_setscope(&ip6->ip6_dst, ifp, NULL) != 0)
-		return;
-
+	m->m_pkthdr.rcvif = ifp;
 	icmp6_error(m, type, code, param);
 }
 
@@ -372,22 +355,10 @@ icmp6_error(struct mbuf *m, int type, int code, int param)
 	nip6->ip6_src  = oip6->ip6_src;
 	nip6->ip6_dst  = oip6->ip6_dst;
 
-	in6_clearscope(&oip6->ip6_src);
-	in6_clearscope(&oip6->ip6_dst);
-
 	icmp6 = (struct icmp6_hdr *)(nip6 + 1);
 	icmp6->icmp6_type = type;
 	icmp6->icmp6_code = code;
 	icmp6->icmp6_pptr = htonl((u_int32_t)param);
-
-	/*
-	 * icmp6_reflect() is designed to be in the input path.
-	 * icmp6_error() can be called from both input and output path,
-	 * and if we are in output path rcvif could contain bogus value.
-	 * clear m->m_pkthdr.rcvif for safety, we should have enough scope
-	 * information in ip header (nip6).
-	 */
-	m->m_pkthdr.rcvif = NULL;
 
 	ICMP6STAT_INC(icp6s_outhist[type]);
 	icmp6_reflect(m, sizeof(struct ip6_hdr)); /* header order: IPv6 - ICMPv6 */
@@ -2214,7 +2185,7 @@ icmp6_reflect(struct mbuf *m, size_t off)
 	 * (for example) when we encounter an error while forwarding procedure
 	 * destined to a duplicated address of ours.
 	 */
-	zoneid = in6_getscopezone(m->m_hdr.rcvif,
+	zoneid = in6_getscopezone(m->m_pkthdr.rcvif,
 	    in6_addrscope(&ip6->ip6_dst));
 	if (!IN6_IS_ADDR_MULTICAST(&ip6->ip6_dst)) {
 		ia = in6ifa_ifwithaddr(&ip6->ip6_dst, zoneid);
