@@ -147,10 +147,6 @@ struct rwlock in6_ifaddr_lock;
 RW_SYSINIT(in6_ifaddr_lock, &in6_ifaddr_lock, "in6_ifaddr_lock");
 
 static void ip6_init2(void *);
-static struct ip6aux *ip6_savedstinfo(struct mbuf *, struct in6_addr *, uint32_t);
-static struct ip6aux *ip6_addaux(struct mbuf *);
-static struct ip6aux *ip6_findaux(struct mbuf *m);
-static void ip6_delaux (struct mbuf *);
 static int ip6_hopopts_input(u_int32_t *, u_int32_t *, struct mbuf **, int *);
 #ifdef PULLDOWN_TEST
 static struct mbuf *ip6_pullexthdr(struct mbuf *, size_t, int);
@@ -421,14 +417,12 @@ ip6_input(struct mbuf *m)
 	u_int32_t plen;
 	u_int32_t rtalert = ~0;
 	int nxt, ours = 0;
-	struct ifnet *deliverifp = NULL, *ifp = NULL;
 	struct in6_addr odst;
 	struct route_in6 rin6;
 	struct in6_ifaddr *ia;
 	int srcrt = 0;
 	struct llentry *lle = NULL;
 	struct sockaddr_in6 dst6, *dst;
-	struct ip6aux *aux;
 	int srcscope, dstscope;
 
 	bzero(&rin6, sizeof(struct route_in6));
@@ -444,19 +438,12 @@ ip6_input(struct mbuf *m)
 
 #endif /* IPSEC */
 
-	/*
-	 * make sure we don't have onion peering information into m_tag.
-	 */
-	aux = NULL;
-	ip6_delaux(m);
-
 	if (m->m_flags & M_FASTFWD_OURS) {
 		/*
 		 * Firewall changed destination to local.
 		 */
 		m->m_flags &= ~M_FASTFWD_OURS;
 		ours = 1;
-		deliverifp = m->m_pkthdr.rcvif;
 		ip6 = mtod(m, struct ip6_hdr *);
 		goto hbhcheck;
 	}
@@ -640,7 +627,6 @@ ip6_input(struct mbuf *m)
 	if (m->m_flags & M_FASTFWD_OURS) {
 		m->m_flags &= ~M_FASTFWD_OURS;
 		ours = 1;
-		deliverifp = m->m_pkthdr.rcvif;
 		goto hbhcheck;
 	}
 	if ((m->m_flags & M_IP6_NEXTHOP) &&
@@ -674,7 +660,6 @@ passin:
 	if (IN6_IS_ADDR_MULTICAST(&ip6->ip6_dst)) {
 		ours = 1;
 		in6_ifstat_inc(m->m_pkthdr.rcvif, ifs6_in_mcast);
-		deliverifp = m->m_pkthdr.rcvif;
 		goto hbhcheck;
 	}
 	/*
@@ -710,13 +695,17 @@ passin:
 		ia->ia_ifa.if_ipackets++;
 		ia->ia_ifa.if_ibytes += m->m_pkthdr.len;
 		ifa_free(&ia->ia_ifa);
-		deliverifp = m->m_pkthdr.rcvif;
-		/* record address information into m_tag. */
-		aux = ip6_savedstinfo(m, &ip6->ip6_dst,
-		    in6_getscopezone(deliverifp, dstscope));
 		ours = 1;
 		goto hbhcheck;
 	}
+#if 0
+	/*
+	 * XXX: Disable this code for now.
+	 * It seems we already able to determine our addresses via
+	 * in6ifa_ifwithaddr() when we have enough zone information.
+	 * Handling faith(4) probably should be done in the forwarding
+	 * path.
+	 */
 
 	dst = &rin6.ro_dst;
 	dst->sin6_len = sizeof(struct sockaddr_in6);
@@ -824,6 +813,7 @@ passin:
 			goto hbhcheck;
 		}
 	}
+#endif
 
 	/*
 	 * Now there is no reason to process the packet if it's not our own
@@ -836,29 +826,6 @@ passin:
 	}
 
   hbhcheck:
-	/*
-	 * record address information into m_tag, if we don't have one yet.
-	 * note that we are unable to record it, if the address is not listed
-	 * as our interface address (e.g. multicast addresses, addresses
-	 * within FAITH prefixes and such).
-	 */
-	if (deliverifp != NULL && aux == NULL) {
-		ia = in6_ifawithifp(deliverifp, &ip6->ip6_dst);
-		if (ia != NULL) {
-			dstscope = in6_addrscope(&ip6->ip6_dst);
-			aux = ip6_savedstinfo(m, &ip6->ip6_dst,
-			    in6_getscopezone(deliverifp, dstscope));
-			if (aux == NULL) {
-				/*
-				 * XXX maybe we should drop the packet here,
-				 * as we could not provide enough information
-				 * to the upper layers.
-				 */
-			}
-			ifa_free(&ia->ia_ifa);
-		}
-	}
-
 	/*
 	 * Process Hop-by-Hop options header if it's contained.
 	 * m may be modified in ip6_hopopts_input().
@@ -942,7 +909,7 @@ passin:
 	 * Tell launch routine the next header
 	 */
 	V_ip6stat.ip6s_delivered++;
-	in6_ifstat_inc(deliverifp, ifs6_in_deliver);
+	in6_ifstat_inc(m->m_pkthdr.rcvif, ifs6_in_deliver);
 	nest = 0;
 
 	while (nxt != IPPROTO_DONE) {
@@ -986,40 +953,6 @@ bad:
 out:
 	if (rin6.ro_rt)
 		RTFREE(rin6.ro_rt);
-}
-
-/*
- * set/grab in6_ifaddr correspond to IPv6 destination address.
- * XXX backward compatibility wrapper
- *
- * XXXRW: We should bump the refcount on ia6 before sticking it in the m_tag,
- * and then bump it when the tag is copied, and release it when the tag is
- * freed.  Unfortunately, m_tags don't support deep copies (yet), so instead
- * we just bump the ia refcount when we receive it.  This should be fixed.
- */
-static struct ip6aux *
-ip6_savedstinfo(struct mbuf *m, struct in6_addr *addr, uint32_t zoneid)
-{
-	struct ip6aux *ip6a;
-
-	ip6a = ip6_addaux(m);
-	if (ip6a != NULL) {
-		ip6a->ip6a_dst = *addr;
-		ip6a->ip6a_dstzone = zoneid;
-	}
-	return (ip6a);	/* NULL if failed to set */
-}
-
-struct in6_ifaddr *
-ip6_getdstifaddr(struct mbuf *m)
-{
-	struct ip6aux *ip6a;
-
-	ip6a = ip6_findaux(m);
-	if (ip6a != NULL)
-		return (in6ifa_ifwithaddr(&ip6a->ip6a_dst,
-		    ip6a->ip6a_dstzone));
-	return (NULL);
 }
 
 /*
@@ -1787,42 +1720,6 @@ ip6_lasthdr(struct mbuf *m, int off, int proto, int *nxtp)
 		off = newoff;
 		proto = *nxtp;
 	}
-}
-
-static struct ip6aux *
-ip6_addaux(struct mbuf *m)
-{
-	struct m_tag *mtag;
-
-	mtag = m_tag_find(m, PACKET_TAG_IPV6_INPUT, NULL);
-	if (!mtag) {
-		mtag = m_tag_get(PACKET_TAG_IPV6_INPUT, sizeof(struct ip6aux),
-		    M_NOWAIT);
-		if (mtag) {
-			m_tag_prepend(m, mtag);
-			bzero(mtag + 1, sizeof(struct ip6aux));
-		}
-	}
-	return mtag ? (struct ip6aux *)(mtag + 1) : NULL;
-}
-
-static struct ip6aux *
-ip6_findaux(struct mbuf *m)
-{
-	struct m_tag *mtag;
-
-	mtag = m_tag_find(m, PACKET_TAG_IPV6_INPUT, NULL);
-	return mtag ? (struct ip6aux *)(mtag + 1) : NULL;
-}
-
-static void
-ip6_delaux(struct mbuf *m)
-{
-	struct m_tag *mtag;
-
-	mtag = m_tag_find(m, PACKET_TAG_IPV6_INPUT, NULL);
-	if (mtag)
-		m_tag_delete(m, mtag);
 }
 
 /*
