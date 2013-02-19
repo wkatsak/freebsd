@@ -1127,14 +1127,15 @@ icmp6_notify_error(struct mbuf **mp, int off, int icmp6len, int code)
 			icmp6dst.sin6_addr = eip6->ip6_dst;
 		else
 			icmp6dst.sin6_addr = *finaldst;
-		if (in6_setscope(&icmp6dst.sin6_addr, m->m_pkthdr.rcvif, NULL))
-			goto freeit;
+		icmp6dst.sin6_scope_id = in6_getscopezone(m->m_pkthdr.rcvif,
+		    in6_addrscope(&icmp6dst.sin6_addr));
+
 		bzero(&icmp6src, sizeof(icmp6src));
 		icmp6src.sin6_len = sizeof(struct sockaddr_in6);
 		icmp6src.sin6_family = AF_INET6;
 		icmp6src.sin6_addr = eip6->ip6_src;
-		if (in6_setscope(&icmp6src.sin6_addr, m->m_pkthdr.rcvif, NULL))
-			goto freeit;
+		icmp6src.sin6_scope_id = in6_getscopezone(m->m_pkthdr.rcvif,
+		    in6_addrscope(&icmp6src.sin6_addr));
 		icmp6src.sin6_flowinfo =
 		    (eip6->ip6_flow & IPV6_FLOWLABEL_MASK);
 
@@ -1213,8 +1214,7 @@ icmp6_mtudisc_update(struct ip6ctlparam *ip6cp, int validated)
 	bzero(&inc, sizeof(inc));
 	inc.inc_flags |= INC_ISIPV6;
 	inc.inc6_faddr = *dst;
-	if (in6_setscope(&inc.inc6_faddr, m->m_pkthdr.rcvif, NULL))
-		return;
+	/* XXX: There is no space to keep scope information. */
 
 	if (mtu < tcp_maxmtu6(&inc, NULL)) {
 		tcp_hc_updatemtu(&inc, mtu);
@@ -1983,18 +1983,11 @@ icmp6_rip6_input(struct mbuf **mp, int off)
 	}
 #endif
 
-	/*
-	 * XXX: the address may have embedded scope zone ID, which should be
-	 * hidden from applications.
-	 */
 	bzero(&fromsa, sizeof(fromsa));
 	fromsa.sin6_family = AF_INET6;
 	fromsa.sin6_len = sizeof(struct sockaddr_in6);
 	fromsa.sin6_addr = ip6->ip6_src;
-	if (sa6_recoverscope(&fromsa)) {
-		m_freem(m);
-		return (IPPROTO_DONE);
-	}
+	/* XXX: sin6_scope_id */
 
 	INP_INFO_RLOCK(&V_ripcbinfo);
 	LIST_FOREACH(in6p, &V_ripcb, inp_list) {
@@ -2338,11 +2331,6 @@ icmp6_redirect_input(struct mbuf *m, int off)
 	redtgt6 = nd_rd->nd_rd_target;
 	reddst6 = nd_rd->nd_rd_dst;
 
-	if (in6_setscope(&redtgt6, m->m_pkthdr.rcvif, NULL) ||
-	    in6_setscope(&reddst6, m->m_pkthdr.rcvif, NULL)) {
-		goto freeit;
-	}
-
 	/* validation */
 	if (!IN6_IS_ADDR_LINKLOCAL(&src6)) {
 		nd6log((LOG_ERR,
@@ -2366,7 +2354,9 @@ icmp6_redirect_input(struct mbuf *m, int off)
 	bzero(&sin6, sizeof(sin6));
 	sin6.sin6_family = AF_INET6;
 	sin6.sin6_len = sizeof(struct sockaddr_in6);
-	bcopy(&reddst6, &sin6.sin6_addr, sizeof(reddst6));
+	sin6.sin6_addr = reddst6;
+	sin6.sin6_scope_id = in6_getscopezone(ifp,
+	    in6_addrscope(&reddst6));
 	rt = in6_rtalloc1((struct sockaddr *)&sin6, 0, 0UL, RT_DEFAULT_FIB);
 	if (rt) {
 		if (rt->rt_gateway == NULL ||
@@ -2750,12 +2740,6 @@ noredhdropt:;
 		m_freem(m0);
 		m0 = NULL;
 	}
-
-	/* XXX: clear embedded link IDs in the inner header */
-	in6_clearscope(&sip6->ip6_src);
-	in6_clearscope(&sip6->ip6_dst);
-	in6_clearscope(&nd_rd->nd_rd_target);
-	in6_clearscope(&nd_rd->nd_rd_dst);
 
 	ip6->ip6_plen = htons(m->m_pkthdr.len - sizeof(struct ip6_hdr));
 
