@@ -860,30 +860,20 @@ nd6_is_new_addr_neighbor(struct sockaddr_in6 *addr, struct ifnet *ifp)
 
 	/*
 	 * A link-local address is always a neighbor.
-	 * XXX: a link does not necessarily specify a single interface.
 	 */
-	if (IN6_IS_ADDR_LINKLOCAL(&addr->sin6_addr)) {
-		struct sockaddr_in6 sin6_copy;
-		u_int32_t zone;
-
-		/*
-		 * We need sin6_copy since sa6_recoverscope() may modify the
-		 * content (XXX).
-		 */
-		sin6_copy = *addr;
-		if (sa6_recoverscope(&sin6_copy))
-			return (0); /* XXX: should be impossible */
-		if (in6_setscope(&sin6_copy.sin6_addr, ifp, &zone))
-			return (0);
-		if (sin6_copy.sin6_scope_id == zone)
-			return (1);
-		else
-			return (0);
-	}
-
+	if (IN6_IS_ADDR_LINKLOCAL(&addr->sin6_addr))
+		return (1);
 	/*
 	 * If the address matches one of our addresses,
 	 * it should be a neighbor.
+	 */
+	dstaddr = (struct ifaddr *)in6ifa_ifwithaddr(&addr->sin6_addr,
+	    in6_getscopezone(ifp, in6_addrscope(&addr->sin6_addr)));
+	if (dstaddr != NULL) {
+		ifa_free(dstaddr);
+		return (1);
+	}
+	/*
 	 * If the address matches one of our on-link prefixes, it should be a
 	 * neighbor.
 	 */
@@ -1222,8 +1212,6 @@ nd6_ioctl(u_long cmd, caddr_t data, struct ifnet *ifp)
 			if (i >= DRLSTSIZ)
 				break;
 			drl->defrouter[i].rtaddr = dr->rtaddr;
-			in6_clearscope(&drl->defrouter[i].rtaddr);
-
 			drl->defrouter[i].flags = dr->flags;
 			drl->defrouter[i].rtlifetime = dr->rtlifetime;
 			drl->defrouter[i].expire = dr->expire;
@@ -1278,10 +1266,8 @@ nd6_ioctl(u_long cmd, caddr_t data, struct ifnet *ifp)
 			j = 0;
 			LIST_FOREACH(pfr, &pr->ndpr_advrtrs, pfr_entry) {
 				if (j < DRLSTSIZ) {
-#define RTRADDR oprl->prefix[i].advrtr[j]
-					RTRADDR = pfr->router->rtaddr;
-					in6_clearscope(&RTRADDR);
-#undef RTRADDR
+					oprl->prefix[i].advrtr[j] =
+					    pfr->router->rtaddr;
 				}
 				j++;
 			}
@@ -1473,13 +1459,9 @@ nd6_ioctl(u_long cmd, caddr_t data, struct ifnet *ifp)
 	case SIOCGNBRINFO_IN6:
 	{
 		struct llentry *ln;
-		struct in6_addr nb_addr = nbi->addr; /* make local for safety */
-
-		if ((error = in6_setscope(&nb_addr, ifp, NULL)) != 0)
-			return (error);
 
 		IF_AFDATA_RLOCK(ifp);
-		ln = nd6_lookup(&nb_addr, 0, ifp);
+		ln = nd6_lookup(&nbi->addr, 0, ifp);
 		IF_AFDATA_RUNLOCK(ifp);
 
 		if (ln == NULL) {
@@ -2261,9 +2243,8 @@ nd6_sysctl_drlist(SYSCTL_HANDLER_ARGS)
 	 */
 	TAILQ_FOREACH(dr, &V_nd_defrouter, dr_entry) {
 		d.rtaddr.sin6_addr = dr->rtaddr;
-		error = sa6_recoverscope(&d.rtaddr);
-		if (error != 0)
-			return (error);
+		d.rtaddr.sin6_scope_id = in6_getscopezone(dr->ifp,
+		    in6_addrscope(&dr->rtaddr));
 		d.flags = dr->flags;
 		d.rtlifetime = dr->rtlifetime;
 		d.expire = dr->expire;
@@ -2300,11 +2281,8 @@ nd6_sysctl_prlist(SYSCTL_HANDLER_ARGS)
 	 */
 	LIST_FOREACH(pr, &V_nd_prefix, ndpr_entry) {
 		p.prefix = pr->ndpr_prefix;
-		if (sa6_recoverscope(&p.prefix)) {
-			log(LOG_ERR, "scope error in prefix list (%s)\n",
-			    ip6_sprintf(ip6buf, &p.prefix.sin6_addr));
-			/* XXX: press on... */
-		}
+		p.prefix.sin6_scope_id = in6_getscopezone(pr->ndpr_ifp,
+		    in6_addrscope(&pr->ndpr_prefix.sin6_addr));
 		p.raflags = pr->ndpr_raf;
 		p.prefixlen = pr->ndpr_plen;
 		p.vltime = pr->ndpr_vltime;
@@ -2332,10 +2310,8 @@ nd6_sysctl_prlist(SYSCTL_HANDLER_ARGS)
 			return (error);
 		LIST_FOREACH(pfr, &pr->ndpr_advrtrs, pfr_entry) {
 			s6.sin6_addr = pfr->router->rtaddr;
-			if (sa6_recoverscope(&s6))
-				log(LOG_ERR,
-				    "scope error in prefix list (%s)\n",
-				    ip6_sprintf(ip6buf, &pfr->router->rtaddr));
+			s6.sin6_scope_id = in6_getscopezone(pfr->router->ifp,
+			    in6_addrscope(&pfr->router->rtaddr));
 			error = SYSCTL_OUT(req, &s6, sizeof(s6));
 			if (error != 0)
 				return (error);
