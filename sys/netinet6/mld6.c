@@ -196,11 +196,6 @@ static int	sysctl_mld_ifinfo(SYSCTL_HANDLER_ARGS);
 static struct mtx		 mld_mtx;
 static MALLOC_DEFINE(M_MLD, "mld", "mld state");
 
-#define	MLD_EMBEDSCOPE(pin6, zoneid)					\
-	if (IN6_IS_SCOPE_LINKLOCAL(pin6) ||				\
-	    IN6_IS_ADDR_MC_INTFACELOCAL(pin6))				\
-		(pin6)->s6_addr16[1] = htons((zoneid) & 0xFFFF)		\
-
 /*
  * VIMAGE-wide globals.
  */
@@ -426,11 +421,7 @@ mld_dispatch_queue(struct ifqueue *ifq, int limit)
  * Filter outgoing MLD report state by group.
  *
  * Reports are ALWAYS suppressed for ALL-HOSTS (ff02::1)
- * and node-local addresses. However, kernel and socket consumers
- * always embed the KAME scope ID in the address provided, so strip it
- * when performing comparison.
- * Note: This is not the same as the *multicast* scope.
- *
+ * and node-local addresses.
  * Return zero if the given group is one for which MLD reports
  * should be suppressed, or non-zero if reports should be issued.
  */
@@ -440,15 +431,9 @@ mld_is_addr_reported(const struct in6_addr *addr)
 
 	KASSERT(IN6_IS_ADDR_MULTICAST(addr), ("%s: not multicast", __func__));
 
-	if (IPV6_ADDR_MC_SCOPE(addr) == IPV6_ADDR_SCOPE_NODELOCAL)
+	if (IPV6_ADDR_MC_SCOPE(addr) == IPV6_ADDR_SCOPE_NODELOCAL ||
+	    IN6_ARE_ADDR_EQUAL(addr, &in6addr_linklocal_allnodes))
 		return (0);
-
-	if (IPV6_ADDR_MC_SCOPE(addr) == IPV6_ADDR_SCOPE_LINKLOCAL) {
-		struct in6_addr tmp = *addr;
-		in6_clearscope(&tmp);
-		if (IN6_ARE_ADDR_EQUAL(&tmp, &in6addr_linklocal_allnodes))
-			return (0);
-	}
 
 	return (1);
 }
@@ -665,19 +650,10 @@ mld_v1_input_query(struct ifnet *ifp, const struct ip6_hdr *ip6,
 		 * MLDv1 General Query.
 		 * If this was not sent to the all-nodes group, ignore it.
 		 */
-		struct in6_addr		 dst;
-
-		dst = ip6->ip6_dst;
-		in6_clearscope(&dst);
-		if (!IN6_ARE_ADDR_EQUAL(&dst, &in6addr_linklocal_allnodes))
+		if (!IN6_ARE_ADDR_EQUAL(&ip6->ip6_dst,
+		    &in6addr_linklocal_allnodes))
 			return (EINVAL);
 		is_general_query = 1;
-	} else {
-		/*
-		 * Embed scope ID of receiving interface in MLD query for
-		 * lookup whilst we don't hold other locks.
-		 */
-		in6_setscope(&mld->mld_addr, ifp, NULL);
 	}
 
 	IN6_MULTI_LOCK();
@@ -722,8 +698,6 @@ mld_v1_input_query(struct ifnet *ifp, const struct ip6_hdr *ip6,
 			    ifp, ifp->if_xname);
 			mld_v1_update_group(inm, timer);
 		}
-		/* XXX Clear embedded scope ID as userland won't expect it. */
-		in6_clearscope(&mld->mld_addr);
 	}
 
 	IF_ADDR_RUNLOCK(ifp);
@@ -873,13 +847,6 @@ mld_v2_input_query(struct ifnet *ifp, const struct ip6_hdr *ip6,
 		if (nsrc > 0)
 			return (EINVAL);
 		is_general_query = 1;
-	} else {
-		/*
-		 * Embed scope ID of receiving interface in MLD query for
-		 * lookup whilst we don't hold other locks (due to KAME
-		 * locking lameness). We own this mbuf chain just now.
-		 */
-		in6_setscope(&mld->mld_addr, ifp, NULL);
 	}
 
 	IN6_MULTI_LOCK();
@@ -958,8 +925,6 @@ mld_v2_input_query(struct ifnet *ifp, const struct ip6_hdr *ip6,
 		if (mli->mli_v2_timer == 0 || mli->mli_v2_timer >= timer)
 			mld_v2_process_group_query(inm, mli, timer, m, off);
 
-		/* XXX Clear embedded scope ID as userland won't expect it. */
-		in6_clearscope(&mld->mld_addr);
 		IF_ADDR_RUNLOCK(ifp);
 	}
 
@@ -1094,7 +1059,6 @@ static int
 mld_v1_input_report(struct ifnet *ifp, const struct ip6_hdr *ip6,
     /*const*/ struct mld_hdr *mld)
 {
-	struct in6_addr		 src, dst;
 	struct in6_ifaddr	*ia;
 	struct in6_multi	*inm;
 #ifdef KTR
@@ -1115,9 +1079,8 @@ mld_v1_input_report(struct ifnet *ifp, const struct ip6_hdr *ip6,
 	 * MLDv1 reports must originate from a host's link-local address,
 	 * or the unspecified address (when booting).
 	 */
-	src = ip6->ip6_src;
-	in6_clearscope(&src);
-	if (!IN6_IS_SCOPE_LINKLOCAL(&src) && !IN6_IS_ADDR_UNSPECIFIED(&src)) {
+	if (!IN6_IS_SCOPE_LINKLOCAL(&ip6->ip6_src) &&
+	    !IN6_IS_ADDR_UNSPECIFIED(&ip6->ip6_src)) {
 		CTR3(KTR_MLD, "ignore v1 query src %s on ifp %p(%s)",
 		    ip6_sprintf(ip6tbuf, &ip6->ip6_src),
 		    ifp, ifp->if_xname);
@@ -1128,10 +1091,8 @@ mld_v1_input_report(struct ifnet *ifp, const struct ip6_hdr *ip6,
 	 * RFC2710 Section 4: MLDv1 reports must pertain to a multicast
 	 * group, and must be directed to the group itself.
 	 */
-	dst = ip6->ip6_dst;
-	in6_clearscope(&dst);
 	if (!IN6_IS_ADDR_MULTICAST(&mld->mld_addr) ||
-	    !IN6_ARE_ADDR_EQUAL(&mld->mld_addr, &dst)) {
+	    !IN6_ARE_ADDR_EQUAL(&mld->mld_addr, &ip6->ip6_dst)) {
 		CTR3(KTR_MLD, "ignore v1 query dst %s on ifp %p(%s)",
 		    ip6_sprintf(ip6tbuf, &ip6->ip6_dst),
 		    ifp, ifp->if_xname);
@@ -1160,13 +1121,6 @@ mld_v1_input_report(struct ifnet *ifp, const struct ip6_hdr *ip6,
 
 	CTR3(KTR_MLD, "process v1 report %s on ifp %p(%s)",
 	    ip6_sprintf(ip6tbuf, &mld->mld_addr), ifp, ifp->if_xname);
-
-	/*
-	 * Embed scope ID of receiving interface in MLD query for lookup
-	 * whilst we don't hold other locks (due to KAME locking lameness).
-	 */
-	if (!IN6_IS_ADDR_UNSPECIFIED(&mld->mld_addr))
-		in6_setscope(&mld->mld_addr, ifp, NULL);
 
 	IN6_MULTI_LOCK();
 	MLD_LOCK();
@@ -1221,9 +1175,6 @@ out_locked:
 	IF_ADDR_RUNLOCK(ifp);
 	MLD_UNLOCK();
 	IN6_MULTI_UNLOCK();
-
-	/* XXX Clear embedded scope ID as userland won't expect it. */
-	in6_clearscope(&mld->mld_addr);
 
 	return (0);
 }
@@ -1839,7 +1790,6 @@ mld_v1_transmit_report(struct in6_multi *in6m, const int type)
 	mld->mld_maxdelay = 0;
 	mld->mld_reserved = 0;
 	mld->mld_addr = in6m->in6m_addr;
-	in6_clearscope(&mld->mld_addr);
 	mld->mld_cksum = in6_cksum(mh, IPPROTO_ICMPV6,
 	    sizeof(struct ip6_hdr), sizeof(struct mld_hdr));
 
@@ -2466,7 +2416,6 @@ mld_v2_enqueue_group_record(struct ifqueue *ifq, struct in6_multi *inm,
 	mr.mr_datalen = 0;
 	mr.mr_numsrc = 0;
 	mr.mr_addr = inm->in6m_addr;
-	in6_clearscope(&mr.mr_addr);
 	if (!m_append(m, sizeof(struct mldv2_record), (void *)&mr)) {
 		if (m != m0)
 			m_freem(m);
@@ -2752,7 +2701,6 @@ mld_v2_enqueue_filter_change(struct ifqueue *ifq, struct in6_multi *inm)
 			 */
 			memset(&mr, 0, sizeof(mr));
 			mr.mr_addr = inm->in6m_addr;
-			in6_clearscope(&mr.mr_addr);
 			if (!m_append(m, sizeof(mr), (void *)&mr)) {
 				if (m != m0)
 					m_freem(m);
@@ -3051,7 +2999,6 @@ mld_dispatch_packet(struct mbuf *m)
 	struct ifnet		*oifp;
 	struct mbuf		*m0;
 	struct mbuf		*md;
-	struct ip6_hdr		*ip6;
 	struct mld_hdr		*mld;
 	int			 error;
 	int			 off;
@@ -3100,18 +3047,6 @@ mld_dispatch_packet(struct mbuf *m)
 	mld_scrub_context(m0);
 	m->m_flags &= ~(M_PROTOFLAGS);
 	m0->m_pkthdr.rcvif = V_loif;
-
-	ip6 = mtod(m0, struct ip6_hdr *);
-#if 0
-	(void)in6_setscope(&ip6->ip6_dst, ifp, NULL);	/* XXX LOR */
-#else
-	/*
-	 * XXX XXX Break some KPI rules to prevent an LOR which would
-	 * occur if we called in6_setscope() at transmission.
-	 * See comments at top of file.
-	 */
-	MLD_EMBEDSCOPE(&ip6->ip6_dst, ifp->if_index);
-#endif
 
 	/*
 	 * Retrieve the ICMPv6 type before handoff to ip6_output(),
