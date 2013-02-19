@@ -134,8 +134,6 @@ nd6_ns_input(struct mbuf *m, int off, int icmp6len)
 #endif
 	ip6 = mtod(m, struct ip6_hdr *); /* adjust pointer for safety */
 	taddr6 = nd_ns->nd_ns_target;
-	if (in6_setscope(&taddr6, ifp, NULL) != 0)
-		goto bad;
 
 	if (ip6->ip6_hlim != 255) {
 		nd6log((LOG_ERR,
@@ -148,7 +146,7 @@ nd6_ns_input(struct mbuf *m, int off, int icmp6len)
 	if (IN6_IS_ADDR_UNSPECIFIED(&saddr6)) {
 		/* dst has to be a solicited node multicast address. */
 		if (daddr6.s6_addr16[0] == IPV6_ADDR_INT16_MLL &&
-		    /* don't check ifindex portion */
+		    daddr6.s6_addr16[1] == 0 &&
 		    daddr6.s6_addr32[1] == 0 &&
 		    daddr6.s6_addr32[2] == IPV6_ADDR_INT32_ONE &&
 		    daddr6.s6_addr8[12] == 0xff) {
@@ -344,8 +342,6 @@ nd6_ns_input(struct mbuf *m, int off, int icmp6len)
 		struct in6_addr in6_all;
 
 		in6_all = in6addr_linklocal_allnodes;
-		if (in6_setscope(&in6_all, ifp, NULL) != 0)
-			goto bad;
 		nd6_na_output_fib(ifp, &in6_all, &taddr6,
 		    ((anycast || proxy || !tlladdr) ? 0 : ND_NA_FLAG_OVERRIDE) |
 		    rflag, tlladdr, proxy ? (struct sockaddr *)&proxydl : NULL,
@@ -461,8 +457,6 @@ nd6_ns_output(struct ifnet *ifp, const struct in6_addr *daddr6,
 		ip6->ip6_dst.s6_addr32[2] = IPV6_ADDR_INT32_ONE;
 		ip6->ip6_dst.s6_addr32[3] = taddr6->s6_addr32[3];
 		ip6->ip6_dst.s6_addr8[12] = 0xff;
-		if (in6_setscope(&ip6->ip6_dst, ifp, NULL) != 0)
-			goto bad;
 	}
 	if (!dad) {
 		struct ifaddr *ifa;
@@ -547,7 +541,6 @@ nd6_ns_output(struct ifnet *ifp, const struct in6_addr *daddr6,
 	nd_ns->nd_ns_code = 0;
 	nd_ns->nd_ns_reserved = 0;
 	nd_ns->nd_ns_target = *taddr6;
-	in6_clearscope(&nd_ns->nd_ns_target); /* XXX */
 
 	/*
 	 * Add source link-layer address option.
@@ -666,9 +659,6 @@ nd6_na_input(struct mbuf *m, int off, int icmp6len)
 	is_override = ((flags & ND_NA_FLAG_OVERRIDE) != 0);
 
 	taddr6 = nd_na->nd_na_target;
-	if (in6_setscope(&taddr6, ifp, NULL))
-		goto bad;	/* XXX: impossible */
-
 	if (IN6_IS_ADDR_MULTICAST(&taddr6)) {
 		nd6log((LOG_ERR,
 		    "nd6_na_input: invalid target address %s\n",
@@ -1032,9 +1022,6 @@ nd6_na_output_fib(struct ifnet *ifp, const struct in6_addr *daddr6_0,
 		daddr6.s6_addr32[1] = 0;
 		daddr6.s6_addr32[2] = 0;
 		daddr6.s6_addr32[3] = IPV6_ADDR_INT32_ONE;
-		if (in6_setscope(&daddr6, ifp, NULL))
-			goto bad;
-
 		flags &= ~ND_NA_FLAG_SOLICITED;
 	}
 	ip6->ip6_dst = daddr6;
@@ -1061,7 +1048,6 @@ nd6_na_output_fib(struct ifnet *ifp, const struct in6_addr *daddr6_0,
 	nd_na->nd_na_type = ND_NEIGHBOR_ADVERT;
 	nd_na->nd_na_code = 0;
 	nd_na->nd_na_target = *taddr6;
-	in6_clearscope(&nd_na->nd_na_target); /* XXX */
 
 	/*
 	 * "tlladdr" indicates NS's condition for adding tlladdr or not.
