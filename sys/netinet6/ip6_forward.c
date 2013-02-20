@@ -99,7 +99,7 @@ ip6_forward(struct mbuf *m, int srcrt)
 	int error, type = 0, code = 0;
 	struct mbuf *mcopy = NULL;
 	struct ifnet *origifp;	/* maybe unnecessary */
-	u_int32_t inzone, outzone;
+	int srcscope, dstscope;
 	struct in6_addr src_in6, dst_in6, odst;
 #ifdef IPSEC
 	struct secpolicy *sp = NULL;
