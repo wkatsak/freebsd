@@ -330,7 +330,6 @@ im6o_match_source(const struct ip6_moptions *imo, const size_t gidx,
 
 	psa = (const sockunion_t *)src;
 	find.im6s_addr = psa->sin6.sin6_addr;
-	in6_clearscope(&find.im6s_addr);		/* XXX */
 	ims = RB_FIND(ip6_msource_tree, &imf->im6f_sources, &find);
 
 	return ((struct in6_msource *)ims);
@@ -1826,8 +1825,7 @@ in6p_join_group(struct inpcb *inp, struct sockopt *sopt)
 		if (mreq.ipv6mr_interface == 0) {
 			ifp = in6p_lookup_mcast_ifp(inp, &gsa->sin6);
 		} else {
-			if (mreq.ipv6mr_interface < 0 ||
-			    V_if_index < mreq.ipv6mr_interface)
+			if (V_if_index < mreq.ipv6mr_interface)
 				return (EADDRNOTAVAIL);
 			ifp = ifnet_byindex(mreq.ipv6mr_interface);
 		}
@@ -1860,7 +1858,7 @@ in6p_join_group(struct inpcb *inp, struct sockopt *sopt)
 			if (IN6_IS_ADDR_MULTICAST(&ssa->sin6.sin6_addr))
 				return (EINVAL);
 			/*
-			 * TODO: Validate embedded scope ID in source
+			 * XXX: Validate embedded scope ID in source
 			 * list entry against passed-in ifp, if and only
 			 * if source list filter entry is iface or node local.
 			 */
