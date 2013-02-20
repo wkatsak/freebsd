@@ -357,6 +357,14 @@ again:
 	dst->sin6_len = sizeof(struct sockaddr_in6);
 	dst->sin6_family = AF_INET6;
 	dst->sin6_addr = ip6->ip6_dst;
+	/*
+	 * The next-hop interface is chosen by looking up the destination
+	 * address in a routing table specific to that zone.
+	 * That routing table is restricted to refer to interfaces belonging
+	 * to that zone.
+	 */
+	dst->sin6_scope_id = in6_getscopezone(m->m_pkthdr.rcvif,
+	    in6_addrscope(&ip6->ip6_dst));
 again2:
 	rin6.ro_rt = in6_rtalloc1((struct sockaddr *)dst, 0, 0, M_GETFIB(m));
 	if (rin6.ro_rt != NULL)
@@ -376,27 +384,25 @@ skip_routing:
 #endif
 
 	/*
-	 * Source scope check: if a packet can't be delivered to its
-	 * destination for the reason that the destination is beyond the scope
-	 * of the source address, discard the packet and return an icmp6
-	 * destination unreachable error with Code 2 (beyond scope of source
-	 * address).  We use a local copy of ip6_src, since in6_setscope()
-	 * will possibly modify its first argument.
-	 * [draft-ietf-ipngwg-icmp-v3-04.txt, Section 3.1]
+	 * RFC 4007:
+	 * If transmitting the packet on the chosen next-hop interface
+	 * would cause the packet to leave the zone of the source address,
+	 * i.e., cross a zone boundary of the scope of the source address,
+	 * then the packet is discarded. Additionally, if the packet's
+	 * destination address is a unicast address, an ICMP destination
+	 * Unreachable message with Code 2 ("beyond scope of source address")
+	 * is sent to the source of the original packet.
+	 *
+	 * If a router receives a packet with a link-local destination
+	 * address that is not one of the router's own link-local addresses
+	 * on the arrival link, the router is expected to try to forward
+	 * the packet to the destination on that link.
 	 */
-	src_in6 = ip6->ip6_src;
-	if (in6_setscope(&src_in6, rt->rt_ifp, &outzone)) {
-		/* XXX: this should not happen */
-		V_ip6stat.ip6s_cantforward++;
-		V_ip6stat.ip6s_badscope++;
-		goto bad;
-	}
-	if (in6_setscope(&src_in6, m->m_pkthdr.rcvif, &inzone)) {
-		V_ip6stat.ip6s_cantforward++;
-		V_ip6stat.ip6s_badscope++;
-		goto bad;
-	}
-	if (inzone != outzone
+	srcscope = in6_addrscope(&ip6->ip6_src);
+	dstscope = in6_addrscope(&ip6->ip6_dst);
+	if (dstscope != IPV6_ADDR_SCOPE_LINKLOCAL &&
+	    in6_getscopezone(m->m_pkthdr.rcvif, srcscope) !=
+	    in6_getscopezone(rt->rt_ifp, dstscope)
 #ifdef IPSEC
 	    && !ipsecrt
 #endif
@@ -418,22 +424,6 @@ skip_routing:
 		if (mcopy)
 			icmp6_error(mcopy, ICMP6_DST_UNREACH,
 				    ICMP6_DST_UNREACH_BEYONDSCOPE, 0);
-		goto bad;
-	}
-
-	/*
-	 * Destination scope check: if a packet is going to break the scope
-	 * zone of packet's destination address, discard it.  This case should
-	 * usually be prevented by appropriately-configured routing table, but
-	 * we need an explicit check because we may mistakenly forward the
-	 * packet to a different zone by (e.g.) a default route.
-	 */
-	dst_in6 = ip6->ip6_dst;
-	if (in6_setscope(&dst_in6, m->m_pkthdr.rcvif, &inzone) != 0 ||
-	    in6_setscope(&dst_in6, rt->rt_ifp, &outzone) != 0 ||
-	    inzone != outzone) {
-		V_ip6stat.ip6s_cantforward++;
-		V_ip6stat.ip6s_badscope++;
 		goto bad;
 	}
 
@@ -549,12 +539,6 @@ skip_routing:
 	}
 	else
 		origifp = rt->rt_ifp;
-	/*
-	 * clear embedded scope identifiers if necessary.
-	 * in6_clearscope will touch the addresses only when necessary.
-	 */
-	in6_clearscope(&ip6->ip6_src);
-	in6_clearscope(&ip6->ip6_dst);
 
 	/* Jump over all PFIL processing if hooks are not active. */
 	if (!PFIL_HOOKED(&V_inet6_pfil_hook))
