@@ -128,21 +128,21 @@ variable logoY
 
 	3 + \ beastie adjustment (see `fbsdbw-logo' comments above)
 
-	2dup at-xy ."  [31m```                        [31;1m`[31m" 1+
-	2dup at-xy ." s` `.....---...[31;1m....--.```   -/[31m" 1+
-	2dup at-xy ." +o   .--`         [31;1m/y:`      +.[31m" 1+
-	2dup at-xy ."  yo`:.            [31;1m:o      `+-[31m" 1+
-	2dup at-xy ."   y/               [31;1m-/`   -o/[31m" 1+
-	2dup at-xy ."  .-                  [31;1m::/sy+:.[31m" 1+
-	2dup at-xy ."  /                     [31;1m`--  /[31m" 1+
-	2dup at-xy ." `:                          [31;1m:`[31m" 1+
-	2dup at-xy ." `:                          [31;1m:`[31m" 1+
-	2dup at-xy ."  /                          [31;1m/[31m" 1+
-	2dup at-xy ."  .-                        [31;1m-.[31m" 1+
-	2dup at-xy ."   --                      [31;1m-.[31m" 1+
-	2dup at-xy ."    `:`                  [31;1m`:`" 1+
-	2dup at-xy ."      [31;1m.--             `--." 1+
-	     at-xy ."         .---.....----.[37m"
+	2dup at-xy ." " 1+
+	2dup at-xy ." " 1+
+	2dup at-xy ." " 1+
+	2dup at-xy ." " 1+
+	2dup at-xy ." " 1+
+	2dup at-xy ." " 1+
+	2dup at-xy ." " 1+
+	2dup at-xy ." " 1+
+	2dup at-xy ." " 1+
+	2dup at-xy ." " 1+
+	2dup at-xy ." " 1+
+	2dup at-xy ." " 1+
+	2dup at-xy ." " 1+
+	2dup at-xy ." " 1+
+	     at-xy ." "
 
  	\ Put the cursor back at the bottom
  	0 25 at-xy
@@ -152,21 +152,21 @@ variable logoY
 
 	3 + \ beastie adjustment (see `fbsdbw-logo' comments above)
 
-	2dup at-xy ."  ```                        `" 1+
-	2dup at-xy ." s` `.....---.......--.```   -/" 1+
-	2dup at-xy ." +o   .--`         /y:`      +." 1+
-	2dup at-xy ."  yo`:.            :o      `+-" 1+
-	2dup at-xy ."   y/               -/`   -o/" 1+
-	2dup at-xy ."  .-                  ::/sy+:." 1+
-	2dup at-xy ."  /                     `--  /" 1+
-	2dup at-xy ." `:                          :`" 1+
-	2dup at-xy ." `:                          :`" 1+
-	2dup at-xy ."  /                          /" 1+
-	2dup at-xy ."  .-                        -." 1+
-	2dup at-xy ."   --                      -." 1+
-	2dup at-xy ."    `:`                  `:`" 1+
-	2dup at-xy ."      .--             `--." 1+
-	     at-xy ."         .---.....----."
+	2dup at-xy ." " 1+
+	2dup at-xy ." " 1+
+	2dup at-xy ." " 1+
+	2dup at-xy ." " 1+
+	2dup at-xy ." " 1+
+	2dup at-xy ." " 1+
+	2dup at-xy ." " 1+
+	2dup at-xy ." " 1+
+	2dup at-xy ." " 1+
+	2dup at-xy ." " 1+
+	2dup at-xy ." " 1+
+	2dup at-xy ." " 1+
+	2dup at-xy ." " 1+
+	2dup at-xy ." " 1+
+	     at-xy ." "
 
  	\ Put the cursor back at the bottom
  	0 25 at-xy
