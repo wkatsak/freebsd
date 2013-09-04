@@ -1,5 +1,5 @@
 \ Loader.rc
-\ $FreeBSD: releng/9.1/sys/boot/i386/loader/loader.rc 151874 2005-10-30 05:41:42Z scottl $
+\ $FreeBSD$
 \
 \ Includes additional commands
 include /boot/loader.4th
@@ -10,5 +10,9 @@ start
 \ Tests for password -- executes autoboot first if a password was defined
 check-password
 
-\ Start the boot menu
-beastie-start
+\ Uncomment to enable boot menu
+\ include /boot/beastie.4th
+\ beastie-start
+
+\ Unless set otherwise, autoboot is automatic at this point
+

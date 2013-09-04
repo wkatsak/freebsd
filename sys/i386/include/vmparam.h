@@ -202,8 +202,4 @@
 
 #define	ZERO_REGION_SIZE	(64 * 1024)	/* 64KB */
 
-#ifndef VM_MAX_AUTOTUNE_MAXUSERS
-#define VM_MAX_AUTOTUNE_MAXUSERS 384
-#endif
-
 #endif /* _MACHINE_VMPARAM_H_ */
