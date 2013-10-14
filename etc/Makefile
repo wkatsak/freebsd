@@ -218,9 +218,6 @@ distribution:
 		echo "./etc/spwd.db type=file mode=0600 uname=root gname=wheel"; \
 	) | ${METALOG.add}
 .endif
-.if ${MK_ATF} != "no"
-	${_+_}cd ${.CURDIR}/atf; ${MAKE} install
-.endif
 .if ${MK_BLUETOOTH} != "no"
 	${_+_}cd ${.CURDIR}/bluetooth; ${MAKE} install
 .endif
