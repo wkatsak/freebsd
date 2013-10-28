@@ -159,26 +159,23 @@ else
   #
 
   case ${local_startup} in
-  [Nn][Oo] | '') ;;
-  *)	find_local_scripts_new ;;
+    [Nn][Oo] | '') ;;
+    *)	find_local_scripts_new ;;
   esac
-
-  files=`rcorder ${skip} /etc/rc.d/* ${local_rc} 2>/dev/null`
-  for _rc_elem in ${files}; do
-
-  # The firstboot sentinel might be on a newly mounted filesystem; look for it
-  # again and unset skip_firstboot if we find it.
-  if [ -e ${firstboot_sentinel} ]; then
-	skip_firstboot=""
-  fi
 
   files=`rcorder ${skip} ${skip_firstboot} /etc/rc.d/* ${local_rc} 2>/dev/null`
   for _rc_elem in ${files}; do
-	case "$_rc_elem_done" in
-	*" $_rc_elem "*)	continue ;;
-	esac
 
-	run_rc_script ${_rc_elem} ${_boot}
+    # The firstboot sentinel might be on a newly mounted filesystem; look for it
+    # again and unset skip_firstboot if we find it.
+    if [ -e ${firstboot_sentinel} ]; then
+	skip_firstboot=""
+    fi
+
+    case "$_rc_elem_done" in
+       *" $_rc_elem "*)	continue ;;
+    esac
+    run_rc_script ${_rc_elem} ${_boot}
   done
 
 fi
