@@ -39,6 +39,10 @@ if [ -e "/etc/defaults/trueos" ] ; then
   # Enable the crash-reporter for textdumps
   ix_textdump_enable="YES"
   ix_diagnose_enable="YES"
+
+  # Enable panic mail
+  panicmail_enable="YES"
+  panicmail_autosubmit="YES"
 fi
 
 # Defaults for PC-BSD desktops
@@ -170,4 +174,8 @@ if [ -e "/etc/defaults/pcbsd" ] ; then
   # Enable the crash-reporter for textdumps
   ix_textdump_enable="YES"
   ix_diagnose_enable="YES"
+
+  # Enable panic mail
+  panicmail_enable="YES"
+  panicmail_autosubmit="YES"
 fi
