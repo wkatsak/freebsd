@@ -320,6 +320,7 @@ __DEFAULT_YES_OPTIONS = \
     NIS \
     NLS \
     NLS_CATALOGS \
+    NMTREE \
     NS_CACHING \
     NTP \
     OPENSSH \
@@ -370,7 +371,6 @@ __DEFAULT_NO_OPTIONS = \
     LIBICONV_COMPAT \
     INSTALL_AS_USER \
     LLDB \
-    NMTREE \
     NAND \
     OFED \
     OPENSSH_NONE_CIPHER \
@@ -554,7 +554,6 @@ MK_GDB:=	no
 .if ${MK_CLANG} == "no"
 MK_CLANG_EXTRAS:= no
 MK_CLANG_FULL:= no
-MK_CLANG_IS_CC:= no
 .endif
 
 .if ${MK_CLANG_IS_CC} == "no"
