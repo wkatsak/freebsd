@@ -38,12 +38,19 @@
 #   xargs -n1 | sort | uniq -d;
 # done
 
+# 20131109: extattr(2) mlinks fixed
+OLD_FILES+=usr/share/man/man2/extattr_delete_list.2.gz
+OLD_FILES+=usr/share/man/man2/extattr_get_list.2.gz
 # 20131103: WITH_LIBICONV_COMPAT removal
 OLD_FILES+=usr/include/_libiconv_compat.h
 OLD_FILES+=usr/lib/libiconv.a
 OLD_FILES+=usr/lib/libiconv.so
 OLD_FILES+=usr/lib/libiconv.so.3
 OLD_FILES+=usr/lib/libiconv_p.a
+OLD_FILES+=usr/lib32/libiconv.a
+OLD_FILES+=usr/lib32/libiconv.so
+OLD_FILES+=usr/lib32/libiconv.so.3
+OLD_FILES+=usr/lib32/libiconv_p.a
 # 20131030: /etc/keys moved to /usr/share/keys
 OLD_DIRS+=etc/keys
 OLD_DIRS+=etc/keys/pkg
@@ -88,6 +95,7 @@ OLD_FILES+=usr/bin/gnu-ranlib
 OLD_FILES+=usr/share/man/man1/gnu-ar.1.gz
 OLD_FILES+=usr/share/man/man1/gnu-ranlib.1.gz
 # 20130930: BIND removed from base
+OLD_FILES+=etc/mtree/BIND.chroot.dist
 OLD_FILES+=etc/namedb
 OLD_FILES+=etc/periodic/daily/470.status-named
 OLD_FILES+=usr/bin/dig
@@ -109,7 +117,7 @@ OLD_FILES+=usr/include/lwres/result.h
 OLD_FILES+=usr/include/lwres/version.h
 OLD_FILES+=usr/lib/liblwres.a
 OLD_FILES+=usr/lib/liblwres.so
-OLD_LIBS+=usr/lib/liblwres.so.50
+OLD_LIBS+=usr/lib/liblwres.so.90
 OLD_FILES+=usr/lib/liblwres_p.a
 OLD_FILES+=usr/sbin/arpaname
 OLD_FILES+=usr/sbin/ddns-confgen
@@ -119,6 +127,7 @@ OLD_FILES+=usr/sbin/dnssec-keygen
 OLD_FILES+=usr/sbin/dnssec-revoke
 OLD_FILES+=usr/sbin/dnssec-settime
 OLD_FILES+=usr/sbin/dnssec-signzone
+OLD_FILES+=usr/sbin/dnssec-verify
 OLD_FILES+=usr/sbin/genrandom
 OLD_FILES+=usr/sbin/isc-hmac-fixup
 OLD_FILES+=usr/sbin/lwresd
