@@ -140,7 +140,7 @@ powerpc/mpc85xx/mpc85xx.c	optional	mpc85xx
 powerpc/mpc85xx/nexus.c		optional	mpc85xx
 powerpc/mpc85xx/pci_fdt.c	optional	pci mpc85xx
 powerpc/ofw/ofw_cpu.c		optional	aim
-powerpc/ofw/ofw_machdep.c	optional	aim
+powerpc/ofw/ofw_machdep.c	standard
 powerpc/ofw/ofw_pci.c		optional	pci aim
 powerpc/ofw/ofw_pcibus.c	optional	pci aim
 powerpc/ofw/ofw_pcib_pci.c	optional	pci aim
@@ -232,6 +232,7 @@ powerpc/pseries/phyp_llan.c	optional	llan
 powerpc/pseries/phyp_vscsi.c	optional	pseries powerpc64 scbus
 powerpc/pseries/platform_chrp.c	optional	pseries
 powerpc/pseries/plpar_iommu.c	optional	pseries powerpc64
+powerpc/pseries/plpar_pcibus.c	optional	pseries powerpc64 pci
 powerpc/pseries/rtas_dev.c	optional	pseries
 powerpc/pseries/rtas_pci.c	optional	pseries pci
 powerpc/pseries/vdevice.c	optional	pseries powerpc64
