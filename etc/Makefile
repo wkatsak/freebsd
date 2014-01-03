@@ -141,6 +141,9 @@ BIN1+= regdomain.xml
 BIN2=	netstart pccard_ether rc.suspend rc.resume
 
 MTREE=	BSD.include.dist BSD.root.dist BSD.usr.dist BSD.var.dist
+.if ${MK_TESTS} != "no"
+MTREE+=	BSD.tests.dist
+.endif
 .if ${MK_SENDMAIL} != "no"
 MTREE+=	BSD.sendmail.dist
 .endif
@@ -318,6 +321,9 @@ MTREES+=	mtree/BSD.debug.dist		/usr/lib
 .endif
 .if ${MK_GROFF} != "no"
 MTREES+=	mtree/BSD.groff.dist		/usr
+.endif
+.if ${MK_TESTS} != "no"
+MTREES+=	mtree/BSD.tests.dist		/usr
 .endif
 .if ${MK_SENDMAIL} != "no"
 MTREES+=	mtree/BSD.sendmail.dist		/

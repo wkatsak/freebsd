@@ -86,6 +86,7 @@ device		cpufreq
 
 # Bus support.
 device		acpi
+options 	ACPI_DMAR
 device		pci
 
 # Floppy drives
