@@ -630,10 +630,10 @@ ctl_be_block_flush_file(struct ctl_be_block_lun *be_lun,
 	ctl_complete_beio(beio);
 }
 
-SDT_PROBE_DEFINE1(cbb, kernel, read, file_start, file_start, "uint64_t");
-SDT_PROBE_DEFINE1(cbb, kernel, write, file_start, file_start, "uint64_t");
-SDT_PROBE_DEFINE1(cbb, kernel, read, file_done, file_done,"uint64_t");
-SDT_PROBE_DEFINE1(cbb, kernel, write, file_done, file_done, "uint64_t");
+SDT_PROBE_DEFINE1(cbb, kernel, read, file_start, "uint64_t");
+SDT_PROBE_DEFINE1(cbb, kernel, write, file_start, "uint64_t");
+SDT_PROBE_DEFINE1(cbb, kernel, read, file_done,"uint64_t");
+SDT_PROBE_DEFINE1(cbb, kernel, write, file_done, "uint64_t");
 
 static void
 ctl_be_block_dispatch_file(struct ctl_be_block_lun *be_lun,
@@ -962,10 +962,10 @@ ctl_be_block_cw_dispatch(struct ctl_be_block_lun *be_lun,
 	}
 }
 
-SDT_PROBE_DEFINE1(cbb, kernel, read, start, start, "uint64_t");
-SDT_PROBE_DEFINE1(cbb, kernel, write, start, start, "uint64_t");
-SDT_PROBE_DEFINE1(cbb, kernel, read, alloc_done, alloc_done, "uint64_t");
-SDT_PROBE_DEFINE1(cbb, kernel, write, alloc_done, alloc_done, "uint64_t");
+SDT_PROBE_DEFINE1(cbb, kernel, read, start, "uint64_t");
+SDT_PROBE_DEFINE1(cbb, kernel, write, start, "uint64_t");
+SDT_PROBE_DEFINE1(cbb, kernel, read, alloc_done, "uint64_t");
+SDT_PROBE_DEFINE1(cbb, kernel, write, alloc_done, "uint64_t");
 
 static void
 ctl_be_block_dispatch(struct ctl_be_block_lun *be_lun,
@@ -1607,18 +1607,6 @@ ctl_be_block_open(struct ctl_be_block_softc *softc,
 }
 
 static int
-ctl_be_block_mem_ctor(void *mem, int size, void *arg, int flags)
-{
-	return (0);
-}
-
-static void
-ctl_be_block_mem_dtor(void *mem, int size, void *arg)
-{
-	bzero(mem, size);
-}
-
-static int
 ctl_be_block_create(struct ctl_be_block_softc *softc, struct ctl_lun_req *req)
 {
 	struct ctl_be_block_lun *be_lun;
@@ -1646,8 +1634,7 @@ ctl_be_block_create(struct ctl_be_block_softc *softc, struct ctl_lun_req *req)
 	mtx_init(&be_lun->lock, be_lun->lunname, NULL, MTX_DEF);
 
 	be_lun->lun_zone = uma_zcreate(be_lun->lunname, MAXPHYS, 
-	    ctl_be_block_mem_ctor, ctl_be_block_mem_dtor, NULL, NULL,
-	    /*align*/ 0, /*flags*/0);
+	    NULL, NULL, NULL, NULL, /*align*/ 0, /*flags*/0);
 
 	if (be_lun->lun_zone == NULL) {
 		snprintf(req->error_str, sizeof(req->error_str),

@@ -1,45 +1,24 @@
 <?xml version="1.0" encoding="iso-8859-1"?>
 <!DOCTYPE article PUBLIC "-//FreeBSD//DTD DocBook XML V5.0-Based Extension//EN"
-        "../../../share/xml/freebsd50.dtd" [
-<!ENTITY % release PUBLIC "-//FreeBSD//ENTITIES Release Specification//EN" "release.ent">
+        "http://www.FreeBSD.org/XML/share/xml/freebsd50.dtd" [
+<!ENTITY % release PUBLIC "-//FreeBSD//ENTITIES Release Specification//EN"
+        "http://www.FreeBSD.org/release/XML/release.ent">
 %release;
 ]>
-<!--
-	FreeBSD errata document.  Unlike some of the other RELNOTESng
-	files, this file should remain as a single SGML file, so that
-	the dollar FreeBSD dollar header has a meaningful modification
-	time.  This file is all but useless without a datestamp on it,
-	so we'll take some extra care to make sure it has one.
 
-	(If we didn't do this, then the file with the datestamp might
-	not be the one that received the last change in the document.)
+<article xmlns="http://docbook.org/ns/docbook"
+	 xmlns:xlink="http://www.w3.org/1999/xlink"
+	 version="5.0">
+  <info>
+    <title>&os; &release.prev; Errata </title>
 
--->
-<article xmlns="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.0">
-  <info><title>&os; &release; Errata </title>
-    
-
-    <author><orgname>
-    The &os; Project
-    </orgname></author>
+    <author><orgname>The &os; Project</orgname></author>
 
     <pubdate>$FreeBSD$</pubdate>
 
     <copyright>
-      <year>2000</year>
-      <year>2001</year>
-      <year>2002</year>
-      <year>2003</year>
-      <year>2004</year>
-      <year>2005</year>
-      <year>2006</year>
-      <year>2007</year>
-      <year>2008</year>
-      <year>2009</year>
-      <year>2010</year>
-      <year>2011</year>
-      <year>2012</year>
-      <year>2013</year>
+      <year>2014</year>
+
       <holder role="mailto:doc@FreeBSD.org">The &os; Documentation Project</holder>
     </copyright>
 
@@ -50,27 +29,27 @@
       &tm-attrib.general;
     </legalnotice>
 
-  <abstract>
-    <para>This document lists errata items for &os; &release;,
-      containing significant information discovered after the release
-      or too late in the release cycle to be otherwise included in the
-      release documentation.
-      This information includes security advisories, as well as news
-      relating to the software or documentation that could affect its
-      operation or usability.  An up-to-date version of this document
-      should always be consulted before installing this version of
-      &os;.</para>
+    <abstract>
+      <para>This document lists errata items for &os; &release.prev;,
+	containing significant information discovered after the release
+	or too late in the release cycle to be otherwise included in the
+	release documentation.
+	This information includes security advisories, as well as news
+	relating to the software or documentation that could affect its
+	operation or usability.  An up-to-date version of this document
+	should always be consulted before installing this version of
+	&os;.</para>
 
-    <para>This errata document for &os; &release;
-      will be maintained until the release of &os; &release.next;.</para>
-  </abstract>
+      <para>This errata document for &os; &release.prev;
+	will be maintained until the release of &os; &release.next;.</para>
+    </abstract>
   </info>
 
   <sect1 xml:id="intro">
     <title>Introduction</title>
 
     <para>This errata document contains <quote>late-breaking news</quote>
-      about &os; &release;
+      about &os; &release.prev;
       Before installing this version, it is important to consult this
       document to learn about any post-release discoveries or problems
       that may already have been found and fixed.</para>
@@ -80,44 +59,186 @@
       out of date by definition, but other copies are kept updated on
       the Internet and should be consulted as the <quote>current
       errata</quote> for this release.  These other copies of the
-      errata are located at <uri xlink:href="http://www.FreeBSD.org/releases/">http://www.FreeBSD.org/releases/</uri>, plus any sites
+      errata are located at
+      <link xlink:href="http://www.FreeBSD.org/releases/" />,
+      plus any sites
       which keep up-to-date mirrors of this location.</para>
 
     <para>Source and binary snapshots of &os; &release.branch; also
       contain up-to-date copies of this document (as of the time of
       the snapshot).</para>
 
-    <para>For a list of all &os; CERT security advisories, see <uri xlink:href="http://www.FreeBSD.org/security/">http://www.FreeBSD.org/security/</uri> or <uri xlink:href="ftp://ftp.FreeBSD.org/pub/FreeBSD/CERT/">ftp://ftp.FreeBSD.org/pub/FreeBSD/CERT/</uri>.</para>
-
+    <para>For a list of all &os; CERT security advisories, see
+      <link xlink:href="http://www.FreeBSD.org/security/" />
+      or <link xlink:href="ftp://ftp.FreeBSD.org/pub/FreeBSD/CERT/" />.</para>
   </sect1>
 
   <sect1 xml:id="security">
     <title>Security Advisories</title>
 
-    <para releasetype="current">No advisories.</para>
+    <informaltable frame="none" pgwide="0">
+      <tgroup cols="3">
+	<colspec colwidth="1*" />
+	<colspec colwidth="1*" />
+	<colspec colwidth="3*" />
+	<thead>
+	  <row>
+	    <entry>Advisory</entry>
+	    <entry>Date</entry>
+	    <entry>Topic</entry>
+	  </row>
+	</thead>
 
-    <para releasetype="release">No advisories.</para>
+	<tbody>
+	  <row>
+	    <entry><link xlink:href="http://www.freebsd.org/security/advisories/FreeBSD-SA-13:14.openssh.asc"
+	      >SA-13:14.openssh</link></entry>
 
-    <para releasetype="snapshot">No advisories.</para>
+	    <entry>19&nbsp;November&nbsp;2013</entry>
+
+	    <entry><para>OpenSSH AES-GCM memory corruption
+		vulnerability</para></entry>
+	  </row>
+
+	  <row>
+	    <entry><link xlink:href="http://www.freebsd.org/security/advisories/FreeBSD-SA-14:01.bsnmpd.asc"
+	      >SA-14:01.bsnmpd</link></entry>
+
+	    <entry>14&nbsp;January&nbsp;2014</entry>
+
+	    <entry><para>bsnmpd remote denial of service vulnerability</para></entry>
+	  </row>
+
+	  <row>
+	    <entry><link xlink:href="http://www.freebsd.org/security/advisories/FreeBSD-SA-14:02.ntpd.asc"
+	      >SA-14:02.ntpd</link></entry>
+
+	    <entry>14&nbsp;January&nbsp;2014</entry>
+
+	    <entry><para>ntpd distributed reflection Denial of Service vulnerability</para></entry>
+	  </row>
+
+	  <row>
+	    <entry><link xlink:href="http://www.freebsd.org/security/advisories/FreeBSD-SA-14:03.openssl.asc"
+	      >SA-14:03.openssl</link></entry>
+
+	    <entry>14&nbsp;January&nbsp;2014</entry>
+
+	    <entry><para>OpenSSL multiple vulnerabilities</para></entry>
+	  </row>
+
+	  <row>
+	    <entry><link xlink:href="http://www.freebsd.org/security/advisories/FreeBSD-SA-14:04.bind.asc"
+	      >SA-14:04.bind</link></entry>
+
+	    <entry>14&nbsp;January&nbsp;2014</entry>
+
+	    <entry><para>BIND remote denial of service vulnerability</para></entry>
+	  </row>
+	</tbody>
+      </tgroup>
+    </informaltable>
   </sect1>
 
   <sect1 xml:id="open-issues">
     <title>Open Issues</title>
 
-    <para releasetype="current">No open issues.</para>
+    <itemizedlist>
+      <listitem>
+	<para>&os;/&arch.i386; &release.prev; running as a guest
+	  operating system on <application>VirtualBox</application>
+	  can have a problem with disk I/O access.  It depends on some
+	  specific hardware configuration and does not depend on a
+	  specific version of <application>VirtualBox</application> or
+	  host operating system.</para>
 
-    <para releasetype="release">No open issues.</para>
+	<para>It causes various errors and makes &os; quite unstable.
+	  Although the cause is still unclear, disabling unmapped I/O
+	  works as a workaround.  To disable it, choose <literal>Escape to
+	    loader prompt</literal> in the boot menu and enter the following
+	  lines from &man.loader.8; prompt, after
+	  an <literal>OK</literal>:</para>
 
-    <para releasetype="snapshot">No open issues.</para>
+	<screen>set vfs.unmapped_buf_allowed=0
+boot</screen>
+
+	<para>Note that the following line has to be added to
+	  <filename>/boot/loader.conf</filename> after a boot.
+          It disables unmapped I/O at every boot:</para>
+
+	<programlisting>vfs.unmapped_buf_allowed=0</programlisting>
+      </listitem>
+
+      <listitem>
+	<para>A bug in <application>Heimdal</application> (an
+	  implementation of <application>Kerberos</application>
+	  authentication in &os; base system) has been fixed.  It
+	  could cause an interoperability issue between
+	  <application>Heimdal</application> and the other
+	  implementations including <application>MIT
+	  Kerberos</application>.  However, due to this fix,
+	  <application>Heimdal</application> and some applications
+	  which depend on it in the previous &os; releases do not work
+	  with one in &release.prev; in certain cases.  Errata Notice
+	  for the supported releases to fix it will be
+	  released.</para>
+      </listitem>
+
+      <listitem>
+	<para>A bug in &man.killall.1; has been discovered.  It
+	  makes <userinput>killall -INT</userinput> to deliver
+	  <literal>SIGTERM</literal> rather than the desired
+	  <literal>SIGINT</literal>, and may cause blocking
+	  behavior for scripts that uses it, as <literal>-I</literal>
+	  means <quote>interactive</quote>.  A workaround of this
+	  would be to use <literal>-SIGINT</literal> instead.
+	  This bug has been fixed on &os;-CURRENT and will be fixed
+	  in &os; &release.current;.</para>
+      </listitem>
+
+      <listitem>
+	<para>The &man.bxe.4; driver can cause packet corruption when
+	  TSO (TCP Segmentation Offload) feature is enabled.  This
+	  feature is enabled by default and can be disabled by using a
+	  <option>-tso</option> parameter of &man.ifconfig.8;.  It can
+	  be specified in &man.rc.conf.5; like the following:</para>
+
+	<programlisting>ifconfig_bxe0="DHCP -tso"</programlisting>
+
+	<para>This bug has been fixed on &os; &release.current;.</para>
+      </listitem>
+
+      <listitem>
+	<para>Due to a minor incompatibility with &man.pkg.7; version
+	  <literal>1.2.x</literal>, &man.bsdconfig.8; will duplicate
+	  the list of available packages for installation.  This is
+	  due to the <literal>PACKAGESITE</literal> environment
+	  variable being set for backwards compatibility with older
+	  versions of &man.pkg.7;.  This affects generation of the
+	  available package list only, and does not affect the
+	  behavior when processing packages for installation.</para>
+      </listitem>
+
+      <listitem>
+	<para>A regression in &man.pw.8; does not remove a user from
+	  groups not specified in the provided group list when the
+	  <literal>-G</literal> flag is used.  This is expected to be
+	  corrected in &os;-CURRENT and &os; &release.current;.</para>
+      </listitem>
+
+      <listitem>
+	<para>&man.ipfw.8; <literal>fwd</literal> action can send
+	  packets to the correct interface with a wrong link-layer
+	  address when the route is updated.  This bug has been fixed
+	  on &os;-CURRENT and will be fixed in &os;
+	  &release.current;.</para>
+      </listitem>
+    </itemizedlist>
   </sect1>
 
   <sect1 xml:id="late-news">
     <title>Late-Breaking News</title>
 
-    <para releasetype="current">No news.</para>
-
-    <para releasetype="release">No news.</para>
-
-    <para releasetype="snapshot">No news.</para>
+    <para>No news.</para>
   </sect1>
 </article>

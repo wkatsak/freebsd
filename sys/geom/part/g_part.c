@@ -107,6 +107,7 @@ struct g_part_alias_list {
 	{ "vmware-vmfs", G_PART_ALIAS_VMFS },
 	{ "vmware-vmkdiag", G_PART_ALIAS_VMKDIAG },
 	{ "vmware-reserved", G_PART_ALIAS_VMRESERVED },
+	{ "vmware-vsanhdr", G_PART_ALIAS_VMVSANHDR },
 };
 
 SYSCTL_DECL(_kern_geom);
@@ -416,6 +417,7 @@ g_part_new_provider(struct g_geom *gp, struct g_part_table *table,
 		sbuf_finish(sb);
 		entry->gpe_pp = g_new_providerf(gp, "%s", sbuf_data(sb));
 		sbuf_delete(sb);
+		entry->gpe_pp->flags |= G_PF_DIRECT_SEND | G_PF_DIRECT_RECEIVE;
 		entry->gpe_pp->private = entry;		/* Close the circle. */
 	}
 	entry->gpe_pp->index = entry->gpe_index - 1;	/* index is 1-based. */
@@ -928,6 +930,7 @@ g_part_ctl_create(struct gctl_req *req, struct g_part_parms *gpp)
 	LIST_INIT(&table->gpt_entry);
 	if (null == NULL) {
 		cp = g_new_consumer(gp);
+		cp->flags |= G_CF_DIRECT_SEND | G_CF_DIRECT_RECEIVE;
 		error = g_attach(cp, pp);
 		if (error == 0)
 			error = g_access(cp, 1, 1, 1);
@@ -1884,6 +1887,7 @@ g_part_taste(struct g_class *mp, struct g_provider *pp, int flags __unused)
 	 */
 	gp = g_new_geomf(mp, "%s", pp->name);
 	cp = g_new_consumer(gp);
+	cp->flags |= G_CF_DIRECT_SEND | G_CF_DIRECT_RECEIVE;
 	error = g_attach(cp, pp);
 	if (error == 0)
 		error = g_access(cp, 1, 0, 0);
