@@ -104,6 +104,7 @@ uwrite(proc_t *p, void *kaddr, size_t len, uintptr_t uaddr)
 #define	r_rip	r_eip
 #define	r_rflags r_eflags
 #define	r_rsp	r_esp
+#define	r_rbp	r_ebp
 #endif
 
 /*
@@ -987,6 +988,9 @@ int
 fasttrap_pid_probe(struct reg *rp)
 {
 	proc_t *p = curproc;
+#if !defined(sun)
+	proc_t *pp;
+#endif
 	uintptr_t pc = rp->r_rip - 1;
 	uintptr_t new_pc = 0;
 	fasttrap_bucket_t *bucket;
@@ -1022,24 +1026,32 @@ fasttrap_pid_probe(struct reg *rp)
 	curthread->t_dtrace_regv = 0;
 #endif
 
-#if defined(sun)
 	/*
 	 * Treat a child created by a call to vfork(2) as if it were its
 	 * parent. We know that there's only one thread of control in such a
 	 * process: this one.
 	 */
+#if defined(sun)
 	while (p->p_flag & SVFORK) {
 		p = p->p_parent;
 	}
-#endif
+
+	pid = p->p_pid;
+	pid_mtx = &cpu_core[CPU->cpu_id].cpuc_pid_lock;
+	mutex_enter(pid_mtx);
+#else
+	pp = p;
+	sx_slock(&proctree_lock);
+	while (pp->p_vmspace == pp->p_pptr->p_vmspace)
+		pp = pp->p_pptr;
+	pid = pp->p_pid;
+	sx_sunlock(&proctree_lock);
+	pp = NULL;
 
 	PROC_LOCK(p);
 	_PHOLD(p);
-	pid = p->p_pid;
-#if defined(sun)
-	pid_mtx = &cpu_core[CPU->cpu_id].cpuc_pid_lock;
-	mutex_enter(pid_mtx);
 #endif
+
 	bucket = &fasttrap_tpoints.fth_table[FASTTRAP_TPOINTS_INDEX(pid, pc)];
 
 	/*
@@ -1059,9 +1071,10 @@ fasttrap_pid_probe(struct reg *rp)
 	if (tp == NULL) {
 #if defined(sun)
 		mutex_exit(pid_mtx);
-#endif
+#else
 		_PRELE(p);
 		PROC_UNLOCK(p);
+#endif
 		return (-1);
 	}
 
@@ -1183,9 +1196,10 @@ fasttrap_pid_probe(struct reg *rp)
 	 * tracepoint again later if we need to light up any return probes.
 	 */
 	tp_local = *tp;
-	PROC_UNLOCK(p);
 #if defined(sun)
 	mutex_exit(pid_mtx);
+#else
+	PROC_UNLOCK(p);
 #endif
 	tp = &tp_local;
 
@@ -1381,29 +1395,27 @@ fasttrap_pid_probe(struct reg *rp)
 	case FASTTRAP_T_PUSHL_EBP:
 	{
 		int ret = 0;
-		uintptr_t addr = 0;
 
 #ifdef __amd64
 		if (p->p_model == DATAMODEL_NATIVE) {
-			addr = rp->r_rsp - sizeof (uintptr_t);
-			ret = fasttrap_sulword((void *)addr, &rp->r_rsp);
+			rp->r_rsp -= sizeof (uintptr_t);
+			ret = fasttrap_sulword((void *)rp->r_rsp, rp->r_rbp);
 		} else {
 #endif
 #ifdef __i386__
-			addr = rp->r_rsp - sizeof (uint32_t);
-			ret = fasttrap_suword32((void *)addr, &rp->r_rsp);
+			rp->r_rsp -= sizeof (uint32_t);
+			ret = fasttrap_suword32((void *)rp->r_rsp, rp->r_rbp);
 #endif
 #ifdef __amd64
 		}
 #endif
 
 		if (ret == -1) {
-			fasttrap_sigsegv(p, curthread, addr);
+			fasttrap_sigsegv(p, curthread, rp->r_rsp);
 			new_pc = pc;
 			break;
 		}
 
-		rp->r_rsp = addr;
 		new_pc = pc + tp->ftt_size;
 		break;
 	}
@@ -1487,13 +1499,13 @@ fasttrap_pid_probe(struct reg *rp)
 			if (p->p_model == DATAMODEL_NATIVE) {
 				addr = rp->r_rsp - sizeof (uintptr_t);
 				pcps = pc + tp->ftt_size;
-				ret = fasttrap_sulword((void *)addr, &pcps);
+				ret = fasttrap_sulword((void *)addr, pcps);
 			} else {
 #endif
 #ifdef __i386__
 				addr = rp->r_rsp - sizeof (uint32_t);
 				pcps = (uint32_t)(pc + tp->ftt_size);
-				ret = fasttrap_suword32((void *)addr, &pcps);
+				ret = fasttrap_suword32((void *)addr, pcps);
 #endif
 #ifdef __amd64
 			}
@@ -1737,7 +1749,7 @@ fasttrap_pid_probe(struct reg *rp)
 #if defined(sun)
 		if (fasttrap_copyout(scratch, (char *)addr, i)) {
 #else
-		if (uwrite(curproc, scratch, i, addr)) {
+		if (uwrite(p, scratch, i, addr)) {
 #endif
 			fasttrap_sigtrap(p, curthread, pc);
 			new_pc = pc;
@@ -1796,10 +1808,12 @@ done:
 
 	rp->r_rip = new_pc;
 
+#if !defined(sun)
 	PROC_LOCK(p);
 	proc_write_regs(curthread, rp);
 	_PRELE(p);
 	PROC_UNLOCK(p);
+#endif
 
 	return (0);
 }

@@ -536,17 +536,18 @@ vm_object_deallocate(vm_object_t object)
 				vhold(vp);
 				VM_OBJECT_WUNLOCK(object);
 				vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
-				vdrop(vp);
 				VM_OBJECT_WLOCK(object);
 				if (object->type == OBJT_DEAD ||
 				    object->ref_count != 1) {
 					VM_OBJECT_WUNLOCK(object);
 					VOP_UNLOCK(vp, 0);
+					vdrop(vp);
 					return;
 				}
 				if ((object->flags & OBJ_TMPFS) != 0)
 					VOP_UNSET_TEXT(vp);
 				VOP_UNLOCK(vp, 0);
+				vdrop(vp);
 			}
 			if (object->shadow_count == 0 &&
 			    object->handle == NULL &&
@@ -1628,9 +1629,11 @@ vm_object_backing_scan(vm_object_t object, int op)
 				p = TAILQ_FIRST(&backing_object->memq);
 				continue;
 			}
+
+			/* Use the old pindex to free the right page. */
 			if (backing_object->type == OBJT_SWAP)
-				swap_pager_freespace(backing_object, p->pindex,
-				    1);
+				swap_pager_freespace(backing_object,
+				    new_pindex + backing_offset_index, 1);
 
 #if VM_NRESERVLEVEL > 0
 			/*

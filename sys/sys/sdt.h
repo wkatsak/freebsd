@@ -126,6 +126,14 @@
     arg1, xarg1, arg2, xarg2, arg3, xarg3, arg4, xarg4, arg5, xarg5, arg6,     \
     xarg6)
 
+#define	DTRACE_PROBE(name)
+#define	DTRACE_PROBE1(name, type0, arg0)
+#define	DTRACE_PROBE2(name, type0, arg0, type1, arg1)
+#define	DTRACE_PROBE3(name, type0, arg0, type1, arg1, type2, arg2)
+#define	DTRACE_PROBE4(name, type0, arg0, type1, arg1, type2, arg2, type3, arg3)
+#define	DTRACE_PROBE5(name, type0, arg0, type1, arg1, type2, arg2, type3, arg3,\
+    type4, arg4)
+
 #else
 
 SET_DECLARE(sdt_providers_set, struct sdt_provider);
@@ -134,7 +142,7 @@ SET_DECLARE(sdt_argtypes_set, struct sdt_argtype);
 
 #define SDT_PROVIDER_DEFINE(prov)						\
 	struct sdt_provider sdt_provider_##prov[1] = {				\
-		{ #prov, { NULL, NULL }, { NULL, NULL }, 0, 0 }			\
+		{ #prov, { NULL, NULL }, 0, 0 }					\
 	};									\
 	DATA_SET(sdt_providers_set, sdt_provider_##prov);
 
@@ -313,6 +321,51 @@ SET_DECLARE(sdt_argtypes_set, struct sdt_argtype);
 			    (uintptr_t)arg6);				       \
 	} while (0)
 
+#define	DTRACE_PROBE_IMPL_START(name, arg0, arg1, arg2, arg3, arg4)	do { \
+	static SDT_PROBE_DEFINE(sdt, , , name);				     \
+	SDT_PROBE(sdt, , , name, arg0, arg1, arg2, arg3, arg4);
+#define DTRACE_PROBE_IMPL_END	} while (0)
+
+#define DTRACE_PROBE(name)						\
+	DTRACE_PROBE_IMPL_START(name, 0, 0, 0, 0, 0)			\
+	DTRACE_PROBE_IMPL_END
+
+#define DTRACE_PROBE1(name, type0, arg0)				\
+	DTRACE_PROBE_IMPL_START(name, arg0, 0, 0, 0, 0) 		\
+	SDT_PROBE_ARGTYPE(sdt, , , name, 0, #type0, NULL);		\
+	DTRACE_PROBE_IMPL_END
+
+#define DTRACE_PROBE2(name, type0, arg0, type1, arg1)			\
+	DTRACE_PROBE_IMPL_START(name, arg0, arg1, 0, 0, 0) 		\
+	SDT_PROBE_ARGTYPE(sdt, , , name, 0, #type0, NULL);		\
+	SDT_PROBE_ARGTYPE(sdt, , , name, 1, #type1, NULL);		\
+	DTRACE_PROBE_IMPL_END
+
+#define DTRACE_PROBE3(name, type0, arg0, type1, arg1, type2, arg2)	\
+	DTRACE_PROBE_IMPL_START(name, arg0, arg1, arg2, 0, 0)	 	\
+	SDT_PROBE_ARGTYPE(sdt, , , name, 0, #type0, NULL);		\
+	SDT_PROBE_ARGTYPE(sdt, , , name, 1, #type1, NULL);		\
+	SDT_PROBE_ARGTYPE(sdt, , , name, 2, #type2, NULL);		\
+	DTRACE_PROBE_IMPL_END
+
+#define DTRACE_PROBE4(name, type0, arg0, type1, arg1, type2, arg2, type3, arg3)	\
+	DTRACE_PROBE_IMPL_START(name, arg0, arg1, arg2, arg3, 0) 	\
+	SDT_PROBE_ARGTYPE(sdt, , , name, 0, #type0, NULL);		\
+	SDT_PROBE_ARGTYPE(sdt, , , name, 1, #type1, NULL);		\
+	SDT_PROBE_ARGTYPE(sdt, , , name, 2, #type2, NULL);		\
+	SDT_PROBE_ARGTYPE(sdt, , , name, 3, #type3, NULL);		\
+	DTRACE_PROBE_IMPL_END
+
+#define DTRACE_PROBE5(name, type0, arg0, type1, arg1, type2, arg2, type3, arg3,	\
+    type4, arg4)								\
+	DTRACE_PROBE_IMPL_START(name, arg0, arg1, arg2, arg3, arg4) 	\
+	SDT_PROBE_ARGTYPE(sdt, , , name, 0, #type0, NULL);		\
+	SDT_PROBE_ARGTYPE(sdt, , , name, 1, #type1, NULL);		\
+	SDT_PROBE_ARGTYPE(sdt, , , name, 2, #type2, NULL);		\
+	SDT_PROBE_ARGTYPE(sdt, , , name, 3, #type3, NULL);		\
+	SDT_PROBE_ARGTYPE(sdt, , , name, 4, #type4, NULL);		\
+	DTRACE_PROBE_IMPL_END
+
 #endif /* KDTRACE_HOOKS */
 
 /*
@@ -358,13 +411,14 @@ struct sdt_provider {
 	char *name;			/* Provider name. */
 	TAILQ_ENTRY(sdt_provider)
 			prov_entry;	/* SDT provider list entry. */
-	TAILQ_HEAD(probe_list_head, sdt_probe) probe_list;
 	uintptr_t	id;		/* DTrace provider ID. */
 	int		sdt_refs;	/* Number of module references. */
 };
 
 void sdt_probe_stub(uint32_t, uintptr_t, uintptr_t, uintptr_t, uintptr_t,
     uintptr_t);
+
+SDT_PROVIDER_DECLARE(sdt);
 
 #endif /* _KERNEL */
 
