@@ -67,7 +67,6 @@ __FBSDID("$FreeBSD$");
 #include <net/vnet.h>
 
 #include <net/pfvar.h>
-#include <net/pf_mtag.h>
 #include <net/if_pflog.h>
 #include <net/if_pfsync.h>
 
@@ -327,27 +326,27 @@ VNET_DEFINE(struct pf_limit, pf_limits[PF_LIMIT_MAX]);
 #define	BOUND_IFACE(r, k) \
 	((r)->rule_flag & PFRULE_IFBOUND) ? (k) : V_pfi_all
 
-#define	STATE_INC_COUNTERS(s)				\
-	do {						\
-		s->rule.ptr->states_cur++;		\
-		s->rule.ptr->states_tot++;		\
-		if (s->anchor.ptr != NULL) {		\
-			s->anchor.ptr->states_cur++;	\
-			s->anchor.ptr->states_tot++;	\
-		}					\
-		if (s->nat_rule.ptr != NULL) {		\
-			s->nat_rule.ptr->states_cur++;	\
-			s->nat_rule.ptr->states_tot++;	\
-		}					\
+#define	STATE_INC_COUNTERS(s)						\
+	do {								\
+		counter_u64_add(s->rule.ptr->states_cur, 1);		\
+		counter_u64_add(s->rule.ptr->states_tot, 1);		\
+		if (s->anchor.ptr != NULL) {				\
+			counter_u64_add(s->anchor.ptr->states_cur, 1);	\
+			counter_u64_add(s->anchor.ptr->states_tot, 1);	\
+		}							\
+		if (s->nat_rule.ptr != NULL) {				\
+			counter_u64_add(s->nat_rule.ptr->states_cur, 1);\
+			counter_u64_add(s->nat_rule.ptr->states_tot, 1);\
+		}							\
 	} while (0)
 
-#define	STATE_DEC_COUNTERS(s)				\
-	do {						\
-		if (s->nat_rule.ptr != NULL)		\
-			s->nat_rule.ptr->states_cur--;	\
-		if (s->anchor.ptr != NULL)		\
-			s->anchor.ptr->states_cur--;	\
-		s->rule.ptr->states_cur--;		\
+#define	STATE_DEC_COUNTERS(s)						\
+	do {								\
+		if (s->nat_rule.ptr != NULL)				\
+			counter_u64_add(s->nat_rule.ptr->states_cur, -1);\
+		if (s->anchor.ptr != NULL)				\
+			counter_u64_add(s->anchor.ptr->states_cur, -1);	\
+		counter_u64_add(s->rule.ptr->states_cur, -1);		\
 	} while (0)
 
 static MALLOC_DEFINE(M_PFHASH, "pf_hash", "pf(4) hash header structures");
@@ -639,7 +638,7 @@ pf_insert_src_node(struct pf_src_node **sn, struct pf_rule *rule,
 		PF_HASHROW_ASSERT(sh);
 
 		if (!rule->max_src_nodes ||
-		    rule->src_nodes < rule->max_src_nodes)
+		    counter_u64_fetch(rule->src_nodes) < rule->max_src_nodes)
 			(*sn) = uma_zalloc(V_pf_sources_z, M_NOWAIT | M_ZERO);
 		else
 			V_pf_status.lcounters[LCNT_SRCNODES]++;
@@ -659,7 +658,7 @@ pf_insert_src_node(struct pf_src_node **sn, struct pf_rule *rule,
 		(*sn)->creation = time_uptime;
 		(*sn)->ruletype = rule->action;
 		if ((*sn)->rule.ptr != NULL)
-			(*sn)->rule.ptr->src_nodes++;
+			counter_u64_add((*sn)->rule.ptr->src_nodes, 1);
 		PF_HASHROW_UNLOCK(sh);
 		V_pf_status.scounters[SCNT_SRC_NODE_INSERT]++;
 		V_pf_status.src_nodes++;
@@ -684,7 +683,7 @@ pf_unlink_src_node_locked(struct pf_src_node *src)
 #endif
 	LIST_REMOVE(src, entry);
 	if (src->rule.ptr)
-		src->rule.ptr->src_nodes--;
+		counter_u64_add(src->rule.ptr->src_nodes, -1);
 	V_pf_status.scounters[SCNT_SRC_NODE_REMOVALS]++;
 	V_pf_status.src_nodes--;
 }
@@ -1470,7 +1469,7 @@ pf_state_expires(const struct pf_state *state)
 	start = state->rule.ptr->timeout[PFTM_ADAPTIVE_START];
 	if (start) {
 		end = state->rule.ptr->timeout[PFTM_ADAPTIVE_END];
-		states = state->rule.ptr->states_cur;	/* XXXGL */
+		states = counter_u64_fetch(state->rule.ptr->states_cur);
 	} else {
 		start = V_pf_default_rule.timeout[PFTM_ADAPTIVE_START];
 		end = V_pf_default_rule.timeout[PFTM_ADAPTIVE_END];
@@ -1579,11 +1578,7 @@ pf_unlink_state(struct pf_state *s, u_int flags)
 	if (pfsync_delete_state_ptr != NULL)
 		pfsync_delete_state_ptr(s);
 
-	--s->rule.ptr->states_cur;
-	if (s->nat_rule.ptr != NULL)
-		--s->nat_rule.ptr->states_cur;
-	if (s->anchor.ptr != NULL)
-		--s->anchor.ptr->states_cur;
+	STATE_DEC_COUNTERS(s);
 
 	s->timeout = PFTM_UNLINKED;
 
@@ -3444,7 +3439,8 @@ pf_create_state(struct pf_rule *r, struct pf_rule *nr, struct pf_rule *a,
 	u_short			 reason;
 
 	/* check maximums */
-	if (r->max_states && (r->states_cur >= r->max_states)) {
+	if (r->max_states &&
+	    (counter_u64_fetch(r->states_cur) >= r->max_states)) {
 		V_pf_status.lcounters[LCNT_STATES]++;
 		REASON_SET(&reason, PFRES_MAXSTATES);
 		return (PF_DROP);
@@ -5265,7 +5261,6 @@ pf_route(struct mbuf **m, struct pf_rule *r, int dir, struct ifnet *oifp,
 			PF_STATE_UNLOCK(s);
 		rt = rtalloc1_fib(sintosa(&dst), 0, 0, M_GETFIB(m0));
 		if (rt == NULL) {
-			RTFREE_LOCKED(rt);
 			KMOD_IPSTAT_INC(ips_noroute);
 			error = EHOSTUNREACH;
 			goto bad;

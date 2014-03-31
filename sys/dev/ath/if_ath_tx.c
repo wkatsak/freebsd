@@ -1584,7 +1584,7 @@ ath_tx_normal_setup(struct ath_softc *sc, struct ieee80211_node *ni,
 	ATH_TX_LOCK_ASSERT(sc);
 
 	wh = mtod(m0, struct ieee80211_frame *);
-	iswep = wh->i_fc[1] & IEEE80211_FC1_WEP;
+	iswep = wh->i_fc[1] & IEEE80211_FC1_PROTECTED;
 	ismcast = IEEE80211_IS_MULTICAST(wh->i_addr1);
 	isfrag = m0->m_flags & M_FRAG;
 	hdrlen = ieee80211_anyhdrsize(wh);
@@ -2214,7 +2214,7 @@ ath_tx_raw_start(struct ath_softc *sc, struct ieee80211_node *ni,
 
 		sc->sc_tx_th.wt_tsf = htole64(tsf);
 		sc->sc_tx_th.wt_flags = sc->sc_hwmap[rix].txflags;
-		if (wh->i_fc[1] & IEEE80211_FC1_WEP)
+		if (wh->i_fc[1] & IEEE80211_FC1_PROTECTED)
 			sc->sc_tx_th.wt_flags |= IEEE80211_RADIOTAP_F_WEP;
 		if (m0->m_flags & M_FRAG)
 			sc->sc_tx_th.wt_flags |= IEEE80211_RADIOTAP_F_FRAG;
@@ -3767,9 +3767,10 @@ ath_tx_tid_drain_print(struct ath_softc *sc, struct ath_node *an,
 	     ni->ni_txseqs[tid->tid]);
 
 	/* XXX Dump the frame, see what it is? */
-	ieee80211_dump_pkt(ni->ni_ic,
-	    mtod(bf->bf_m, const uint8_t *),
-	    bf->bf_m->m_len, 0, -1);
+	if (IFF_DUMPPKTS(sc, ATH_DEBUG_XMIT))
+		ieee80211_dump_pkt(ni->ni_ic,
+		    mtod(bf->bf_m, const uint8_t *),
+		    bf->bf_m->m_len, 0, -1);
 }
 
 /*
