@@ -52,6 +52,7 @@
 #include <sys/sysctl.h>
 #include <sys/systm.h>
 
+#define	_IN_NET_RTSOCK_C
 #include <net/if.h>
 #include <net/if_dl.h>
 #include <net/if_llatbl.h>
@@ -105,6 +106,7 @@ struct if_data32 {
 	uint32_t ifi_hwassist;
 	int32_t	ifi_epoch;
 	struct	timeval32 ifi_lastchange;
+	uint32_t ifi_oqdrops;
 };
 
 struct if_msghdr32 {
@@ -194,10 +196,8 @@ static int	sysctl_dumpentry(struct radix_node *rn, void *vw);
 static int	sysctl_iflist(int af, struct walkarg *w);
 static int	sysctl_ifmalist(int af, struct walkarg *w);
 static int	route_output(struct mbuf *m, struct socket *so);
-static void	rt_setmetrics(u_long which, const struct rt_metrics *in,
-			struct rt_metrics_lite *out);
-static void	rt_getmetrics(const struct rt_metrics_lite *in,
-			struct rt_metrics *out);
+static void	rt_setmetrics(const struct rt_msghdr *rtm, struct rtentry *rt);
+static void	rt_getmetrics(const struct rtentry *rt, struct rt_metrics *out);
 static void	rt_dispatch(struct mbuf *, sa_family_t);
 
 static struct netisr_handler rtsock_nh = {
@@ -685,8 +685,7 @@ route_output(struct mbuf *m, struct socket *so)
 			rti_need_deembed = (V_deembed_scopeid) ? 1 : 0;
 #endif
 			RT_LOCK(saved_nrt);
-			rt_setmetrics(rtm->rtm_inits,
-				&rtm->rtm_rmx, &saved_nrt->rt_rmx);
+			rt_setmetrics(rtm, saved_nrt);
 			rtm->rtm_index = saved_nrt->rt_ifp->if_index;
 			RT_REMREF(saved_nrt);
 			RT_UNLOCK(saved_nrt);
@@ -860,7 +859,7 @@ route_output(struct mbuf *m, struct socket *so)
 					(rt->rt_flags & ~RTF_GWFLAG_COMPAT);
 			else
 				rtm->rtm_flags = rt->rt_flags;
-			rt_getmetrics(&rt->rt_rmx, &rtm->rtm_rmx);
+			rt_getmetrics(rt, &rtm->rtm_rmx);
 			rtm->rtm_addrs = info.rti_addrs;
 			break;
 
@@ -923,8 +922,7 @@ route_output(struct mbuf *m, struct socket *so)
 			/* Allow some flags to be toggled on change. */
 			rt->rt_flags = (rt->rt_flags & ~RTF_FMASK) |
 				    (rtm->rtm_flags & RTF_FMASK);
-			rt_setmetrics(rtm->rtm_inits, &rtm->rtm_rmx,
-					&rt->rt_rmx);
+			rt_setmetrics(rtm, rt);
 			rtm->rtm_index = rt->rt_ifp->if_index;
 			if (rt->rt_ifa && rt->rt_ifa->ifa_rtrequest)
 			       rt->rt_ifa->ifa_rtrequest(RTM_ADD, rt, &info);
@@ -1012,34 +1010,30 @@ flush:
 }
 
 static void
-rt_setmetrics(u_long which, const struct rt_metrics *in,
-	struct rt_metrics_lite *out)
+rt_setmetrics(const struct rt_msghdr *rtm, struct rtentry *rt)
 {
-#define metric(f, e) if (which & (f)) out->e = in->e;
-	/*
-	 * Only these are stored in the routing entry since introduction
-	 * of tcp hostcache. The rest is ignored.
-	 */
-	metric(RTV_MTU, rmx_mtu);
-	metric(RTV_WEIGHT, rmx_weight);
-	/* Userland -> kernel timebase conversion. */
-	if (which & RTV_EXPIRE)
-		out->rmx_expire = in->rmx_expire ?
-		    in->rmx_expire - time_second + time_uptime : 0;
-#undef metric
+
+	if (rtm->rtm_inits & RTV_MTU)
+		rt->rt_mtu = rtm->rtm_rmx.rmx_mtu;
+	if (rtm->rtm_inits & RTV_WEIGHT)
+		rt->rt_weight = rtm->rtm_rmx.rmx_weight;
+	/* Kernel -> userland timebase conversion. */
+	if (rtm->rtm_inits & RTV_EXPIRE)
+		rt->rt_expire = rtm->rtm_rmx.rmx_expire ?
+		    rtm->rtm_rmx.rmx_expire - time_second + time_uptime : 0;
 }
 
 static void
-rt_getmetrics(const struct rt_metrics_lite *in, struct rt_metrics *out)
+rt_getmetrics(const struct rtentry *rt, struct rt_metrics *out)
 {
-#define metric(e) out->e = in->e;
+
 	bzero(out, sizeof(*out));
-	metric(rmx_mtu);
-	metric(rmx_weight);
+	out->rmx_mtu = rt->rt_mtu;
+	out->rmx_weight = rt->rt_weight;
+	out->rmx_pksent = counter_u64_fetch(rt->rt_pksent);
 	/* Kernel -> userland timebase conversion. */
-	out->rmx_expire = in->rmx_expire ?
-	    in->rmx_expire - time_uptime + time_second : 0;
-#undef metric
+	out->rmx_expire = rt->rt_expire ?
+	    rt->rt_expire - time_uptime + time_second : 0;
 }
 
 /*
@@ -1603,11 +1597,7 @@ sysctl_dumpentry(struct radix_node *rn, void *vw)
 				(rt->rt_flags & ~RTF_GWFLAG_COMPAT);
 		else
 			rtm->rtm_flags = rt->rt_flags;
-		/*
-		 * let's be honest about this being a retarded hack
-		 */
-		rtm->rtm_fmask = rt->rt_rmx.rmx_pksent;
-		rt_getmetrics(&rt->rt_rmx, &rtm->rtm_rmx);
+		rt_getmetrics(rt, &rtm->rtm_rmx);
 		rtm->rtm_index = rt->rt_ifp->if_index;
 		rtm->rtm_errno = rtm->rtm_pid = rtm->rtm_seq = 0;
 		rtm->rtm_addrs = info.rti_addrs;
@@ -1674,6 +1664,7 @@ sysctl_iflist_ifml(struct ifnet *ifp, struct rt_addrinfo *info,
 		if (carp_get_vhid_p != NULL)
 			ifm32->ifm_data.ifi_vhid =
 			    (*carp_get_vhid_p)(ifp->if_addr);
+		ifm32->ifm_data.ifi_oqdrops = ifp->if_snd.ifq_drops;
 
 		return (SYSCTL_OUT(w->w_req, (caddr_t)ifm32, len));
 	}
@@ -1690,6 +1681,9 @@ sysctl_iflist_ifml(struct ifnet *ifp, struct rt_addrinfo *info,
 	/* Fixup if_data carp(4) vhid. */
 	if (carp_get_vhid_p != NULL)
 		ifm->ifm_data.ifi_vhid = (*carp_get_vhid_p)(ifp->if_addr);
+
+	ifm->ifm_data.ifi_datalen += sizeof(u_long);
+	ifm->ifi_oqdrops = ifp->if_snd.ifq_drops;
 
 	return (SYSCTL_OUT(w->w_req, (caddr_t)ifm, len));
 }

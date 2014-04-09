@@ -77,6 +77,7 @@ LIBDEPS=\
 	clangbasic \
 	clanglex \
 	\
+	llvmoption \
 	llvmarmasmparser \
 	llvmarmcodegen \
 	llvminstrumentation \
@@ -114,6 +115,12 @@ LIBDEPS=\
 	llvmexecutionengine \
 	llvmcodegen \
 	llvmscalaropts \
+	llvmsparcdisassembler \
+	llvmsparccodegen \
+	llvmsparcasmparser \
+	llvmsparcdesc \
+	llvmsparcinfo \
+	llvmsparcinstprinter \
 	llvmarminfo \
 	llvmarminstprinter \
 	llvmmcparser \
