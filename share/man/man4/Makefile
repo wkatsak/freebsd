@@ -153,10 +153,13 @@ MAN=	aac.4 \
 	geom_fox.4 \
 	geom_linux_lvm.4 \
 	geom_map.4 \
+	geom_uncompress.4 \
 	geom_uzip.4 \
 	gif.4 \
 	gpib.4 \
 	gpio.4 \
+	gpioiic.4 \
+	gpioled.4 \
 	gre.4 \
 	h_ertt.4 \
 	hatm.4 \
@@ -262,6 +265,7 @@ MAN=	aac.4 \
 	mpr.4 \
 	mps.4 \
 	mpt.4 \
+	mrsas.4 \
 	msk.4 \
 	mtio.4 \
 	multicast.4 \
@@ -510,6 +514,7 @@ MAN=	aac.4 \
 	udav.4 \
 	udbp.4 \
 	udp.4 \
+	udplite.4 \
 	uep.4 \
 	ufm.4 \
 	ufoma.4 \
@@ -534,6 +539,7 @@ MAN=	aac.4 \
 	urndis.4 \
 	${_urtw.4} \
 	urtwn.4 \
+	urtwnfw.4 \
 	usb.4 \
 	usb_template.4 \
 	usb_quirk.4 \
@@ -555,6 +561,7 @@ MAN=	aac.4 \
 	${_vmx.4} \
 	vpo.4 \
 	vr.4 \
+	vt.4 \
 	vte.4 \
 	${_vtnet.4} \
 	${_vxge.4} \
@@ -632,6 +639,7 @@ MLINKS+=fxp.4 if_fxp.4
 MLINKS+=gem.4 if_gem.4
 MLINKS+=geom.4 GEOM.4
 MLINKS+=gif.4 if_gif.4
+MLINKS+=gpio.4 gpiobus.4
 MLINKS+=gre.4 if_gre.4
 MLINKS+=hatm.4 if_hatm.4
 MLINKS+=hme.4 if_hme.4

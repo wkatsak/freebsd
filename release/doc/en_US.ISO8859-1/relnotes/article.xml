@@ -122,7 +122,7 @@
       &man.sysctl.8; has been re-enabled.  On multi-CPU machines with
       enough RAM, this can easily double &man.zfs.8; performance or
       reduce CPU usage in half.  It was originally disabled due to
-      memory and <acronym>KVA</acronym> exhastion problem reports,
+      memory and <acronym>KVA</acronym> exhaustion problem reports,
       which should be resolved due to several change in the VM
       subsystem.</para>
 
@@ -137,6 +137,27 @@
     <para revision="265388">The &man.mpr.4; device has been added,
       providing support for LSI Fusion-MPT 3 12Gb SCSI/SATA
       controllers.</para>
+
+    <para revision="265922">The &man.mrsas.4; driver has been added,
+      providing support for LSI MegaRAID SAS controllers.  The
+      &man.mfi.4; driver will attach to the controller, by default.
+      To enable &man.mrsas.4; add
+      <literal>hw.mfi.mrsas_enable=1</literal> to
+      <filename>/boot/loader.conf</filename>, which turns off
+      &man.mfi.4; device probing.</para>
+
+    <note>
+      <para>At this time, the &man.mfiutil.8; utility and
+	the &os; version of
+	<application>MegaCLI</application> and
+	<application>StorCli</application> do not work with
+	&man.mrsas.4;.</para>
+    </note>
+
+    <para revision="266165">A kernel bug that inhibited proper
+      functionality of the <literal>dev.cpu.0.freq</literal>
+      &man.sysctl.8; on &intel; processors with Turbo
+      Boost&nbsp;&trade; enabled has been fixed.</para>
 
     <sect3 xml:id="kernel-virtualization">
       <title>Virtualization support</title>
@@ -208,6 +229,17 @@
       <literal>-b</literal>, which outputs the existing buses and
       their parents.</para>
 
+    <para revision="266279">The &man.ps.1; utility has been
+      updated to include the <literal>-J</literal> flag, used to
+      filter output by matching &man.jail.8; IDs and names.
+      Additionally, argument <literal>0</literal> can be used to
+      <literal>-J</literal> to only list processes running on the
+      host system.</para>
+
+    <para revision="266280">The &man.top.1; utility has been updated
+      to filter by &man.jail.8; ID or name, in followup to the
+      &man.ps.1; change in <literal>r265229</literal>.</para>
+
     <sect3 xml:id="rc-scripts">
       <title><filename>/etc/rc.d</filename> Scripts</title>
 
@@ -221,6 +253,9 @@
 
     <para revision="264377"><application>OpenSSH</application> has
       been updated to version 6.6p1.</para>
+
+    <para revision="266692"><application>Sendmail</application>
+      has been updated to 8.14.9.</para>
 
   </sect2>
 

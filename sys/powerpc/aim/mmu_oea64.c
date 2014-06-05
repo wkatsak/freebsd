@@ -180,8 +180,7 @@ uintptr_t moea64_get_unique_vsid(void);
 struct ofw_map {
 	cell_t	om_va;
 	cell_t	om_len;
-	cell_t	om_pa_hi;
-	cell_t	om_pa_lo;
+	uint64_t om_pa;
 	cell_t	om_mode;
 };
 
@@ -471,13 +470,9 @@ om_cmp(const void *a, const void *b)
 
 	mapa = a;
 	mapb = b;
-	if (mapa->om_pa_hi < mapb->om_pa_hi)
+	if (mapa->om_pa < mapb->om_pa)
 		return (-1);
-	else if (mapa->om_pa_hi > mapb->om_pa_hi)
-		return (1);
-	else if (mapa->om_pa_lo < mapb->om_pa_lo)
-		return (-1);
-	else if (mapa->om_pa_lo > mapb->om_pa_lo)
+	else if (mapa->om_pa > mapb->om_pa)
 		return (1);
 	else
 		return (0);
@@ -486,36 +481,51 @@ om_cmp(const void *a, const void *b)
 static void
 moea64_add_ofw_mappings(mmu_t mmup, phandle_t mmu, size_t sz)
 {
-	struct ofw_map	translations[sz/sizeof(struct ofw_map)];
+	struct ofw_map	translations[sz/(4*sizeof(cell_t))]; /*>= 4 cells per */
+	pcell_t		acells, trans_cells[sz/sizeof(cell_t)];
 	register_t	msr;
 	vm_offset_t	off;
 	vm_paddr_t	pa_base;
-	int		i;
+	int		i, j;
 
 	bzero(translations, sz);
-	if (OF_getprop(mmu, "translations", translations, sz) == -1)
+	OF_getprop(OF_finddevice("/"), "#address-cells", &acells,
+	    sizeof(acells));
+	if (OF_getprop(mmu, "translations", trans_cells, sz) == -1)
 		panic("moea64_bootstrap: can't get ofw translations");
 
 	CTR0(KTR_PMAP, "moea64_add_ofw_mappings: translations");
-	sz /= sizeof(*translations);
+	sz /= sizeof(cell_t);
+	for (i = 0, j = 0; i < sz; j++) {
+		translations[j].om_va = trans_cells[i++];
+		translations[j].om_len = trans_cells[i++];
+		translations[j].om_pa = trans_cells[i++];
+		if (acells == 2) {
+			translations[j].om_pa <<= 32;
+			translations[j].om_pa |= trans_cells[i++];
+		}
+		translations[j].om_mode = trans_cells[i++];
+	}
+	KASSERT(i == sz, ("Translations map has incorrect cell count (%d/%zd)",
+	    i, sz));
+
+	sz = j;
 	qsort(translations, sz, sizeof (*translations), om_cmp);
 
 	for (i = 0; i < sz; i++) {
-		CTR3(KTR_PMAP, "translation: pa=%#x va=%#x len=%#x",
-		    (uint32_t)(translations[i].om_pa_lo), translations[i].om_va,
-		    translations[i].om_len);
-
-		if (translations[i].om_pa_lo % PAGE_SIZE)
-			panic("OFW translation not page-aligned!");
-
-		pa_base = translations[i].om_pa_lo;
-
-	      #ifdef __powerpc64__
-		pa_base += (vm_offset_t)translations[i].om_pa_hi << 32;
-	      #else
-		if (translations[i].om_pa_hi)
+		pa_base = translations[i].om_pa;
+	      #ifndef __powerpc64__
+		if ((translations[i].om_pa >> 32) != 0)
 			panic("OFW translations above 32-bit boundary!");
 	      #endif
+
+		if (pa_base % PAGE_SIZE)
+			panic("OFW translation not page-aligned (phys)!");
+		if (translations[i].om_va % PAGE_SIZE)
+			panic("OFW translation not page-aligned (virt)!");
+
+		CTR3(KTR_PMAP, "translation: pa=%#zx va=%#x len=%#x",
+		    pa_base, translations[i].om_va, translations[i].om_len);
 
 		/* Now enter the pages for this mapping */
 
@@ -693,9 +703,9 @@ moea64_early_bootstrap(mmu_t mmup, vm_offset_t kernelstart, vm_offset_t kernelen
 	hwphyssz = 0;
 	TUNABLE_ULONG_FETCH("hw.physmem", (u_long *) &hwphyssz);
 	for (i = 0, j = 0; i < regions_sz; i++, j += 2) {
-		CTR3(KTR_PMAP, "region: %#x - %#x (%#x)", regions[i].mr_start,
-		    regions[i].mr_start + regions[i].mr_size,
-		    regions[i].mr_size);
+		CTR3(KTR_PMAP, "region: %#zx - %#zx (%#zx)",
+		    regions[i].mr_start, regions[i].mr_start +
+		    regions[i].mr_size, regions[i].mr_size);
 		if (hwphyssz != 0 &&
 		    (physsz + regions[i].mr_size) >= hwphyssz) {
 			if (physsz < hwphyssz) {

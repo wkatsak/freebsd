@@ -1002,7 +1002,7 @@ buildkernel:
 	cd ${KRNLCONFDIR}; \
 		PATH=${TMPPATH} \
 		    config ${CONFIGARGS} -d ${KRNLOBJDIR}/${_kernel} \
-			-I ${KERNCONFDIR} ${KERNCONFDIR}/${_kernel}
+			-I '${KERNCONFDIR}' '${KERNCONFDIR}/${_kernel}'
 .endif
 .if !defined(NO_CLEAN) && !defined(NO_KERNELCLEAN)
 	@echo
@@ -1266,7 +1266,7 @@ _dtrace_tools= cddl/usr.bin/sgsmsg cddl/lib/libctf lib/libelf \
     lib/libdwarf cddl/usr.bin/ctfconvert cddl/usr.bin/ctfmerge
 .endif
 
-# Default to building the BSDL DTC, but build the GPL one if users explicitly
+# Default to building the GPL DTC, but build the BSDL one if users explicitly
 # request it.
 _dtc= usr.bin/dtc
 .if ${MK_GPL_DTC} != "no"
@@ -1496,10 +1496,15 @@ _prebuild_libs=	${_kerberos5_lib_libasn1} \
 		lib/libopie lib/libpam ${_lib_libthr} \
 		lib/libradius lib/libsbuf lib/libtacplus \
 		${_cddl_lib_libumem} ${_cddl_lib_libnvpair} \
+		${_cddl_lib_libavl} \
 		${_cddl_lib_libzfs_core} \
 		lib/libutil ${_lib_libypclnt} lib/libz lib/msun \
 		${_secure_lib_libcrypto} ${_lib_libldns} \
 		${_secure_lib_libssh} ${_secure_lib_libssl}
+.if ${MK_GNUCXX} != no
+_prebuild_libs+= gnu/lib/libstdc++ gnu/lib/libsupc++
+gnu/lib/libstdc++__L: lib/msun__L
+.endif
 
 .if defined(WITH_ATF) || ${MK_TESTS} != "no"
 .if !defined(WITH_ATF)
@@ -1530,6 +1535,7 @@ lib/libopie__L lib/libtacplus__L: lib/libmd__L
 .if ${MK_CDDL} != "no"
 _cddl_lib_libumem= cddl/lib/libumem
 _cddl_lib_libnvpair= cddl/lib/libnvpair
+_cddl_lib_libavl= cddl/lib/libavl
 _cddl_lib_libzfs_core= cddl/lib/libzfs_core
 _cddl_lib= cddl/lib
 cddl/lib/libzfs_core__L: cddl/lib/libnvpair__L
@@ -1831,7 +1837,7 @@ DTBOUTPUTPATH= ${KRNLOBJDIR}/${KERNCONF}/
 .if !defined(FDT_DTS_FILE) || empty(FDT_DTS_FILE)
 .if exists(${KERNCONFDIR}/${KERNCONF})
 FDT_DTS_FILE!= awk 'BEGIN {FS="="} /^makeoptions[[:space:]]+FDT_DTS_FILE/ {print $$2}' \
-	${KERNCONFDIR}/${KERNCONF} ; echo
+	'${KERNCONFDIR}/${KERNCONF}' ; echo
 .endif
 .endif
 
@@ -1849,7 +1855,7 @@ builddtb:
 		echo "ERROR: FDT_DTS_FILE must be specified!"; \
 		exit 1; \
 	fi;	\
-	if [ ! -f ${.CURDIR}/sys/boot/fdt/dts/${FDT_DTS_FILE} ]; then \
+	if [ ! -f ${.CURDIR}/sys/boot/fdt/dts/${MACHINE}/${FDT_DTS_FILE} ]; then \
 		echo "ERROR: Specified DTS file (${FDT_DTS_FILE}) does not \
 			exist!"; \
 		exit 1;	\
@@ -1859,9 +1865,9 @@ builddtb:
 			directory"; \
 	fi
 	@PATH=${TMPPATH} \
-	dtc -O dtb -o \
-	    ${DTBOUTPUTPATH}/`echo ${FDT_DTS_FILE} | cut -d. -f1`.dtb -b 0 \
-	    -p 1024 ${.CURDIR}/sys/boot/fdt/dts/${FDT_DTS_FILE}
+	${.CURDIR}/sys/tools/fdt/make_dtb.sh ${.CURDIR}/sys \
+	    ${FDT_DTS_FILE} \
+	    ${DTBOUTPUTPATH}/`basename ${FDT_DTS_FILE} .dts`
 
 ###############
 

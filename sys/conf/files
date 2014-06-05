@@ -54,12 +54,13 @@ aic79xx_reg_print.o		optional ahd pci ahd_reg_pretty_print	   \
 # The 'fdt_dtb_file' target covers an actual DTB file name, which is derived
 # from the specified source (DTS) file: <platform>.dts -> <platform>.dtb
 #
-fdt_dtb_file			optional fdt \
-	compile-with "if [ -f $S/boot/fdt/dts/${FDT_DTS_FILE} ]; then dtc -O dtb -o ${FDT_DTS_FILE:R}.dtb -b 0 -p 1024 $S/boot/fdt/dts/${FDT_DTS_FILE}; fi" \
+fdt_dtb_file			optional fdt fdt_dtb_static \
+	compile-with "sh $S/tools/fdt/make_dtb.sh $S ${FDT_DTS_FILE} ${.CURDIR}/${FDT_DTS_FILE:R}.dtb" \
 	no-obj no-implicit-rule before-depend	\
 	clean		"${FDT_DTS_FILE:R}.dtb"
 fdt_static_dtb.h		optional fdt fdt_dtb_static \
-	compile-with "sh $S/tools/fdt/make_dtbh.sh ${FDT_DTS_FILE} ." \
+	compile-with "sh $S/tools/fdt/make_dtbh.sh ${FDT_DTS_FILE} ${.CURDIR}" \
+	dependency	"fdt_dtb_file" \
 	no-obj no-implicit-rule before-depend \
 	clean		"fdt_static_dtb.h"
 feeder_eq_gen.h			optional sound				   \
@@ -1404,12 +1405,9 @@ dev/fb/fbd.c			optional fbd | vt
 dev/fb/fb_if.m			standard
 dev/fb/splash.c			optional sc splash
 dev/fdt/fdt_common.c		optional fdt
-dev/fdt/fdt_ic_if.m		optional fdt
-dev/fdt/fdt_pci.c		optional fdt pci
 dev/fdt/fdt_slicer.c		optional fdt cfi | fdt nand
 dev/fdt/fdt_static_dtb.S	optional fdt fdt_dtb_static \
-	dependency	"$S/boot/fdt/dts/${FDT_DTS_FILE}"
-dev/fdt/fdtbus.c		optional fdt
+	dependency	"$S/boot/fdt/dts/${MACHINE}/${FDT_DTS_FILE}"
 dev/fdt/simplebus.c		optional fdt
 dev/fe/if_fe.c			optional fe
 dev/fe/if_fe_pccard.c		optional fe pccard
@@ -1440,6 +1438,7 @@ dev/gpio/gpioiic.c		optional gpioiic
 dev/gpio/gpioled.c		optional gpioled
 dev/gpio/gpio_if.m		optional gpio
 dev/gpio/gpiobus_if.m		optional gpio
+dev/gpio/ofw_gpiobus.c		optional fdt gpio
 dev/hatm/if_hatm.c		optional hatm pci
 dev/hatm/if_hatm_intr.c		optional hatm pci
 dev/hatm/if_hatm_ioctl.c	optional hatm pci
@@ -1868,6 +1867,10 @@ dev/mpt/mpt_debug.c		optional mpt
 dev/mpt/mpt_pci.c		optional mpt pci
 dev/mpt/mpt_raid.c		optional mpt
 dev/mpt/mpt_user.c		optional mpt
+dev/mrsas/mrsas.c		optional mrsas
+dev/mrsas/mrsas_cam.c		optional mrsas
+dev/mrsas/mrsas_ioctl.c		optional mrsas
+dev/mrsas/mrsas_fp.c		optional mrsas
 dev/msk/if_msk.c		optional msk
 dev/mvs/mvs.c			optional mvs
 dev/mvs/mvs_if.m		optional mvs
@@ -1965,6 +1968,7 @@ dev/ofw/ofw_bus_subr.c		optional fdt
 dev/ofw/ofw_fdt.c		optional fdt
 dev/ofw/ofw_if.m		optional fdt
 dev/ofw/ofw_iicbus.c		optional fdt iicbus
+dev/ofw/ofwbus.c		optional fdt
 dev/ofw/openfirm.c		optional fdt
 dev/ofw/openfirmio.c		optional fdt
 dev/patm/if_patm.c		optional patm pci
@@ -2417,6 +2421,20 @@ dev/usb/wlan/if_upgt.c		optional upgt
 dev/usb/wlan/if_ural.c		optional ural
 dev/usb/wlan/if_urtw.c		optional urtw
 dev/usb/wlan/if_urtwn.c		optional urtwn
+urtwn-rtl8188eufw.c		optional urtwn-rtl8188eufw | urtwnfw	\
+	compile-with	"${AWK} -f $S/tools/fw_stub.awk urtwn-rtl8188eufw.fw:urtwn-rtl8188eufw:111 -murtwn-rtl8188eufw -c${.TARGET}" \
+	no-implicit-rule before-depend local				\
+	clean		"urtwn-rtl8188eufw.c"
+urtwn-rtl8188eufw.fwo		optional urtwn-rtl8188eufw | urtwnfw	\
+	dependency	"urtwn-rtl8188eufw.fw"				\
+	compile-with	"${NORMAL_FWO}"					\
+	no-implicit-rule						\
+	clean		"urtwn-rtl8188eufw.fwo"
+urtwn-rtl8188eufw.fw		optional urtwn-rtl8188eufw | urtwnfw	\
+	dependency	"$S/contrib/dev/urtwn/urtwn-rtl8188eufw.fw.uu"	\
+	compile-with	"${NORMAL_FW}"					\
+	no-obj no-implicit-rule						\
+	clean		"urtwn-rtl8188eufw.fw"
 urtwn-rtl8192cfwT.c		optional urtwn-rtl8192cfwT | urtwnfw	\
 	compile-with	"${AWK} -f $S/tools/fw_stub.awk urtwn-rtl8192cfwT.fw:urtwn-rtl8192cfwT:111 -murtwn-rtl8192cfwT -c${.TARGET}" \
 	no-implicit-rule before-depend local				\
