@@ -111,9 +111,6 @@ const struct terminal_class vt_termclass = {
 #define	VT_UNIT(vw)	((vw)->vw_device->vd_unit * VT_MAXWINDOWS + \
 			(vw)->vw_number)
 
-/* XXX while syscons is here. */
-int sc_txtmouse_no_retrace_wait;
-
 static SYSCTL_NODE(_kern, OID_AUTO, vt, CTLFLAG_RD, 0, "vt(9) parameters");
 VT_SYSCTL_INT(enable_altgr, 1, "Enable AltGr key (Do not assume R.Alt as Alt)");
 VT_SYSCTL_INT(debug, 0, "vt(9) debug level");
@@ -215,6 +212,8 @@ static void
 vt_update_static(void *dummy)
 {
 
+	if (!vty_enabled(VTY_VT))
+		return;
 	if (main_vd->vd_driver != NULL)
 		printf("VT: running with driver \"%s\".\n",
 		    main_vd->vd_driver->vd_name);
@@ -616,7 +615,7 @@ vt_kbdevent(keyboard_t *kbd, int event, void *arg)
 	case KBDIO_UNLOADING:
 		mtx_lock(&Giant);
 		vd->vd_keyboard = -1;
-		kbd_release(kbd, (void *)&vd->vd_keyboard);
+		kbd_release(kbd, (void *)vd);
 		mtx_unlock(&Giant);
 		return (0);
 	default:
@@ -958,6 +957,9 @@ vtterm_cnprobe(struct terminal *tm, struct consdev *cp)
 	struct winsize wsz;
 	term_attr_t attr;
 	term_char_t c;
+
+	if (!vty_enabled(VTY_VT))
+		return;
 
 	if (vd->vd_flags & VDF_INITIALIZED)
 		/* Initialization already done. */
@@ -1780,11 +1782,10 @@ skip_thunk:
 				return (EINVAL);
 			}
 			i = kbd_allocate(kbd->kb_name, kbd->kb_unit,
-			    (void *)&vd->vd_keyboard, vt_kbdevent, vd);
+			    (void *)vd, vt_kbdevent, vd);
 			if (i >= 0) {
 				if (vd->vd_keyboard != -1) {
-					kbd_release(kbd,
-					    (void *)&vd->vd_keyboard);
+					kbd_release(kbd, (void *)vd);
 				}
 				kbd = kbd_get_keyboard(i);
 				vd->vd_keyboard = i;
@@ -1806,7 +1807,7 @@ skip_thunk:
 				mtx_unlock(&Giant);
 				return (EINVAL);
 			}
-			error = kbd_release(kbd, (void *)&vd->vd_keyboard);
+			error = kbd_release(kbd, (void *)vd);
 			if (error == 0) {
 				vd->vd_keyboard = -1;
 			}
@@ -1998,6 +1999,9 @@ vt_upgrade(struct vt_device *vd)
 	struct vt_window *vw;
 	unsigned int i;
 
+	if (!vty_enabled(VTY_VT))
+		return;
+
 	for (i = 0; i < VT_MAXWINDOWS; i++) {
 		vw = vd->vd_windows[i];
 		if (vw == NULL) {
@@ -2062,6 +2066,9 @@ vt_allocate(struct vt_driver *drv, void *softc)
 {
 	struct vt_device *vd;
 	struct winsize wsz;
+
+	if (!vty_enabled(VTY_VT))
+		return;
 
 	if (main_vd->vd_driver == NULL) {
 		main_vd->vd_driver = drv;

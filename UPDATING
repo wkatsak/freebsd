@@ -16,6 +16,28 @@ from older versions of FreeBSD, try WITHOUT_CLANG to bootstrap to the tip of
 stable/10, and then rebuild without this option. The bootstrap process from
 older version of current is a bit fragile.
 
+20140801:
+	The NFSv4.1 server committed by r269398 changes the internal
+	function call interfaces used between the NFS and krpc modules.
+	As such, __FreeBSD_version was bumped.
+
+20140717:
+	It is no longer necessary to include the dwarf version in your DEBUG
+	options in your kernel config file. The bug that required it to be
+	placed in the config file has bene fixed. DEBUG should now just
+	contain -g. The build system will automatically update things
+	to do the right thing.
+
+20140715:
+	Several ABI breaking changes were merged to CTL and new iSCSI code.
+	All CTL and iSCSI-related tools, such as ctladm, ctld, iscsid and
+	iscsictl need to be rebuilt to work with a new kernel.
+
+20140708:
+	The WITHOUT_VT_SUPPORT kernel config knob has been renamed
+	WITHOUT_VT.  (The other _SUPPORT knobs have a consistent meaning
+	which differs from the behaviour controlled by this knob.)
+
 20140608:
 	On i386 and amd64 systems, the onifconsole flag is now set by default
 	in /etc/ttys for ttyu0. This causes ttyu0 to be automatically enabled
