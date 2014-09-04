@@ -117,10 +117,10 @@ struct vt_device {
 	struct vt_window	*vd_markedwin;	/* (?) Copy/paste buf owner. */
 	const struct vt_driver	*vd_driver;	/* (c) Graphics driver. */
 	void			*vd_softc;	/* (u) Driver data. */
-	uint16_t		 vd_mx;		/* (?) Mouse X. */
-	uint16_t		 vd_my;		/* (?) Mouse Y. */
-	vt_axis_t		 vd_mdirtyx;	/* (?) Screen width. */
-	vt_axis_t		 vd_mdirtyy;	/* (?) Screen height. */
+	uint16_t		 vd_mx;		/* (?) Current mouse X. */
+	uint16_t		 vd_my;		/* (?) current mouse Y. */
+	vt_axis_t		 vd_moldx;	/* (?) Mouse X as of last redraw. */
+	vt_axis_t		 vd_moldy;	/* (?) Mouse Y as of last redraw. */
 	uint32_t		 vd_mstate;	/* (?) Mouse state. */
 	term_pos_t		 vd_offset;	/* (?) Pixel offset. */
 	vt_axis_t		 vd_width;	/* (?) Screen width. */
@@ -128,6 +128,7 @@ struct vt_device {
 	struct mtx		 vd_lock;	/* Per-device lock. */
 	struct cv		 vd_winswitch;	/* (d) Window switch notify. */
 	struct callout		 vd_timer;	/* (d) Display timer. */
+	volatile unsigned int	 vd_timer_armed;/* (?) Display timer started.*/
 	int			 vd_flags;	/* (d) Device flags. */
 #define	VDF_TEXTMODE	0x01	/* Do text mode rendering. */
 #define	VDF_SPLASH	0x02	/* Splash screen active. */
@@ -191,7 +192,7 @@ void vtbuf_cursor_position(struct vt_buf *, const term_pos_t *);
 void vtbuf_scroll_mode(struct vt_buf *vb, int yes);
 void vtbuf_undirty(struct vt_buf *, term_rect_t *, struct vt_bufmask *);
 void vtbuf_sethistory_size(struct vt_buf *, int);
-int vtbuf_iscursor(struct vt_buf *vb, int row, int col);
+int vtbuf_iscursor(const struct vt_buf *vb, int row, int col);
 void vtbuf_cursor_visibility(struct vt_buf *, int);
 #ifndef SC_NO_CUTPASTE
 void vtbuf_mouse_cursor_position(struct vt_buf *vb, int col, int row);
@@ -347,54 +348,6 @@ void vt_upgrade(struct vt_device *vd);
 #ifndef VT_FB_DEFAULT_HEIGHT
 #define	VT_FB_DEFAULT_HEIGHT	1200
 #endif
-
-#define	VT_CONSDEV_DECLARE(driver, width, height, softc)		\
-static struct terminal	driver ## _consterm;				\
-static struct vt_window	driver ## _conswindow;				\
-static struct vt_device	driver ## _consdev = {				\
-	.vd_driver = &driver,						\
-	.vd_softc = (softc),						\
-	.vd_flags = VDF_INVALID,					\
-	.vd_windows = { [VT_CONSWINDOW] =  &driver ## _conswindow, },	\
-	.vd_curwindow = &driver ## _conswindow,				\
-	.vd_markedwin = NULL,						\
-	.vd_kbstate = 0,						\
-};									\
-static term_char_t	driver ## _constextbuf[(width) * 		\
-	    (VBF_DEFAULT_HISTORY_SIZE)];				\
-static term_char_t	*driver ## _constextbufrows[			\
-	    VBF_DEFAULT_HISTORY_SIZE];					\
-static struct vt_window	driver ## _conswindow = {			\
-	.vw_number = VT_CONSWINDOW,					\
-	.vw_flags = VWF_CONSOLE,					\
-	.vw_buf = {							\
-		.vb_buffer = driver ## _constextbuf,			\
-		.vb_rows = driver ## _constextbufrows,			\
-		.vb_history_size = VBF_DEFAULT_HISTORY_SIZE,		\
-		.vb_curroffset = 0,					\
-		.vb_roffset = 0,					\
-		.vb_flags = VBF_STATIC,					\
-		.vb_mark_start = {					\
-			.tp_row = 0,					\
-			.tp_col = 0,					\
-		},							\
-		.vb_mark_end = {					\
-			.tp_row = 0,					\
-			.tp_col = 0,					\
-		},							\
-		.vb_scr_size = {					\
-			.tp_row = height,				\
-			.tp_col = width,				\
-		},							\
-	},								\
-	.vw_device = &driver ## _consdev,				\
-	.vw_terminal = &driver ## _consterm,				\
-	.vw_kbdmode = K_XLATE,						\
-};									\
-TERMINAL_DECLARE_EARLY(driver ## _consterm, vt_termclass,		\
-    &driver ## _conswindow);						\
-SYSINIT(vt_early_cons, SI_SUB_INT_CONFIG_HOOKS, SI_ORDER_ANY,		\
-    vt_upgrade, &driver ## _consdev)
 
 /* name argument is not used yet. */
 #define VT_DRIVER_DECLARE(name, drv) DATA_SET(vt_drv_set, drv)

@@ -11,7 +11,8 @@ SUBDIR=	sendmail
 SUBDIR+=tests
 .endif
 
-BIN1=	crontab \
+BIN1=	auto_master \
+	crontab \
 	devd.conf \
 	devfs.conf \
 	ddb.conf \
@@ -176,7 +177,10 @@ afterinstall:
 .endif
 
 distribute:
-	${_+_}cd ${.CURDIR} ; ${MAKE} install DESTDIR=${DISTDIR}/${DISTRIBUTION}
+	# Avoid installing tests here; "make distribution" will do this and
+	# correctly place them in the right location.
+	${_+_}cd ${.CURDIR} ; ${MAKE} WITHOUT_TESTS=1 install \
+	    DESTDIR=${DISTDIR}/${DISTRIBUTION}
 	${_+_}cd ${.CURDIR} ; ${MAKE} distribution DESTDIR=${DISTDIR}/${DISTRIBUTION}
 
 .include <bsd.endian.mk>
@@ -224,6 +228,7 @@ distribution:
 		echo "./etc/spwd.db type=file mode=0600 uname=root gname=wheel"; \
 	) | ${METALOG.add}
 .endif
+	${_+_}cd ${.CURDIR}/autofs; ${MAKE} install
 .if ${MK_BLUETOOTH} != "no"
 	${_+_}cd ${.CURDIR}/bluetooth; ${MAKE} install
 .endif
