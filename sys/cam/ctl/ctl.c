@@ -6039,7 +6039,7 @@ ctl_unmap(struct ctl_scsiio *ctsio)
 	struct scsi_unmap *cdb;
 	struct ctl_ptr_len_flags *ptrlen;
 	struct scsi_unmap_header *hdr;
-	struct scsi_unmap_desc *buf, *end;
+	struct scsi_unmap_desc *buf, *end, *endnz, *range;
 	uint64_t lba;
 	uint32_t num_blocks;
 	int len, retval;
@@ -6092,24 +6092,38 @@ ctl_unmap(struct ctl_scsiio *ctsio)
 	buf = (struct scsi_unmap_desc *)(hdr + 1);
 	end = buf + len / sizeof(*buf);
 
-	ptrlen = (struct ctl_ptr_len_flags *)&ctsio->io_hdr.ctl_private[CTL_PRIV_LBA_LEN];
-	ptrlen->ptr = (void *)buf;
-	ptrlen->len = len;
-	ptrlen->flags = byte2;
-
-	for (; buf < end; buf++) {
-		lba = scsi_8btou64(buf->lba);
-		num_blocks = scsi_4btoul(buf->length);
+	endnz = buf;
+	for (range = buf; range < end; range++) {
+		lba = scsi_8btou64(range->lba);
+		num_blocks = scsi_4btoul(range->length);
 		if (((lba + num_blocks) > (lun->be_lun->maxlba + 1))
 		 || ((lba + num_blocks) < lba)) {
 			ctl_set_lba_out_of_range(ctsio);
 			ctl_done((union ctl_io *)ctsio);
 			return (CTL_RETVAL_COMPLETE);
 		}
+		if (num_blocks != 0)
+			endnz = range + 1;
 	}
 
-	retval = lun->backend->config_write((union ctl_io *)ctsio);
+	/*
+	 * Block backend can not handle zero last range.
+	 * Filter it out and return if there is nothing left.
+	 */
+	len = (uint8_t *)endnz - (uint8_t *)buf;
+	if (len == 0) {
+		ctl_set_success(ctsio);
+		ctl_done((union ctl_io *)ctsio);
+		return (CTL_RETVAL_COMPLETE);
+	}
 
+	ptrlen = (struct ctl_ptr_len_flags *)
+	    &ctsio->io_hdr.ctl_private[CTL_PRIV_LBA_LEN];
+	ptrlen->ptr = (void *)buf;
+	ptrlen->len = len;
+	ptrlen->flags = byte2;
+
+	retval = lun->backend->config_write((union ctl_io *)ctsio);
 	return (retval);
 }
 
@@ -9670,13 +9684,10 @@ ctl_request_sense(struct ctl_scsiio *ctsio)
 	if (lun->pending_ua[initidx] != CTL_UA_NONE) {
 		ctl_ua_type ua_type;
 
-		ua_type = ctl_build_ua(lun->pending_ua[initidx],
+		ua_type = ctl_build_ua(&lun->pending_ua[initidx],
 				       sense_ptr, sense_format);
-		if (ua_type != CTL_UA_NONE) {
+		if (ua_type != CTL_UA_NONE)
 			have_error = 1;
-			/* We're reporting this UA, so clear it */
-			lun->pending_ua[initidx] &= ~ua_type;
-		}
 	}
 	mtx_unlock(&lun->lun_lock);
 
@@ -11590,8 +11601,7 @@ ctl_scsiio_precheck(struct ctl_softc *ctl_softc, struct ctl_scsiio *ctsio)
 	if ((entry->flags & CTL_CMD_FLAG_NO_SENSE) == 0) {
 		ctl_ua_type ua_type;
 
-		ua_type = lun->pending_ua[initidx];
-		if (ua_type != CTL_UA_NONE) {
+		if (lun->pending_ua[initidx] != CTL_UA_NONE) {
 			scsi_sense_data_type sense_format;
 
 			if (lun != NULL)
@@ -11601,14 +11611,13 @@ ctl_scsiio_precheck(struct ctl_softc *ctl_softc, struct ctl_scsiio *ctsio)
 			else
 				sense_format = SSD_TYPE_FIXED;
 
-			ua_type = ctl_build_ua(ua_type, &ctsio->sense_data,
-					       sense_format);
+			ua_type = ctl_build_ua(&lun->pending_ua[initidx],
+			    &ctsio->sense_data, sense_format);
 			if (ua_type != CTL_UA_NONE) {
 				ctsio->scsi_status = SCSI_STATUS_CHECK_COND;
 				ctsio->io_hdr.status = CTL_SCSI_ERROR |
 						       CTL_AUTOSENSE;
 				ctsio->sense_len = SSD_FULL_SIZE;
-				lun->pending_ua[initidx] &= ~ua_type;
 				mtx_unlock(&lun->lun_lock);
 				ctl_done((union ctl_io *)ctsio);
 				return (retval);
