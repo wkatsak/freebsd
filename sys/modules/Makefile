@@ -271,7 +271,6 @@ SUBDIR=	\
 	${_pccard} \
 	${_pcfclock} \
 	pcn \
-	pefs \
 	${_pf} \
 	${_pflog} \
 	${_pfsync} \
