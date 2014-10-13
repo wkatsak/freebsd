@@ -111,6 +111,7 @@ cddl/compat/opensolaris/kern/opensolaris_misc.c				optional zfs compile-with "${
 cddl/compat/opensolaris/kern/opensolaris_sunddi.c			optional zfs compile-with "${ZFS_C}"
 # zfs specific
 cddl/compat/opensolaris/kern/opensolaris_acl.c				optional zfs compile-with "${ZFS_C}"
+cddl/compat/opensolaris/kern/opensolaris_dtrace.c			optional zfs compile-with "${ZFS_C}"
 cddl/compat/opensolaris/kern/opensolaris_kobj.c				optional zfs compile-with "${ZFS_C}"
 cddl/compat/opensolaris/kern/opensolaris_kstat.c			optional zfs compile-with "${ZFS_C}"
 cddl/compat/opensolaris/kern/opensolaris_lookup.c			optional zfs compile-with "${ZFS_C}"
@@ -1704,7 +1705,7 @@ dev/ixgb/if_ixgb.c		optional ixgb
 dev/ixgb/ixgb_ee.c		optional ixgb
 dev/ixgb/ixgb_hw.c		optional ixgb
 dev/ixgbe/ixgbe.c		optional ixgbe inet \
-	compile-with "${NORMAL_C} -I$S/dev/ixgbe -DSMP -DIXGBE_FDIR"
+	compile-with "${NORMAL_C} -I$S/dev/ixgbe -DSMP"
 dev/ixgbe/ixv.c			optional ixgbe inet \
 	compile-with "${NORMAL_C} -I$S/dev/ixgbe"
 dev/ixgbe/ixgbe_phy.c		optional ixgbe inet \
@@ -3745,7 +3746,7 @@ ofed/drivers/net/mlx4/sys_tune.c		optional mlx4ib | mlxen	\
 ofed/drivers/net/mlx4/en_cq.c			optional mlxen		\
 	no-depend obj-prefix "mlx4_"					\
 	compile-with "${OFED_C_NOIMP} -I$S/ofed/drivers/net/mlx4/"
-ofed/drivers/net/mlx4/en_frag.c			optional mlxen		\
+ofed/drivers/net/mlx4/utils.c			optional mlxen		\
 	no-depend obj-prefix "mlx4_"					\
 	compile-with "${OFED_C_NOIMP} -I$S/ofed/drivers/net/mlx4/"
 ofed/drivers/net/mlx4/en_main.c			optional mlxen		\
