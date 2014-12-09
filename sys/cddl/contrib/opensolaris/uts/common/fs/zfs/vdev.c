@@ -156,6 +156,15 @@ static vdev_ops_t *vdev_ops_table[] = {
 
 
 /*
+ * When a vdev is added, it will be divided into approximately (but no
+ * more than) this number of metaslabs.
+ */
+int metaslabs_per_vdev = 200;
+SYSCTL_INT(_vfs_zfs_vdev, OID_AUTO, metaslabs_per_vdev, CTLFLAG_RDTUN,
+    &metaslabs_per_vdev, 0,
+    "When a vdev is added, how many metaslabs the vdev should be divided into");
+
+/*
  * Given a vdev type, return the appropriate ops vector.
  */
 static vdev_ops_t *
@@ -1214,6 +1223,7 @@ vdev_open(vdev_t *vd)
 	vd->vdev_stat.vs_aux = VDEV_AUX_NONE;
 	vd->vdev_cant_read = B_FALSE;
 	vd->vdev_cant_write = B_FALSE;
+	vd->vdev_notrim = B_FALSE;
 	vd->vdev_min_asize = vdev_get_min_asize(vd);
 
 	/*
@@ -1283,10 +1293,8 @@ vdev_open(vdev_t *vd)
 	if (vd->vdev_ishole || vd->vdev_ops == &vdev_missing_ops)
 		return (0);
 
-	if (vd->vdev_ops->vdev_op_leaf) {
-		vd->vdev_notrim = B_FALSE;
+	if (zfs_trim_enabled && !vd->vdev_notrim && vd->vdev_ops->vdev_op_leaf)
 		trim_map_create(vd);
-	}
 
 	for (int c = 0; c < vd->vdev_children; c++) {
 		if (vd->vdev_child[c]->vdev_state != VDEV_STATE_HEALTHY) {
@@ -1663,9 +1671,9 @@ void
 vdev_metaslab_set_size(vdev_t *vd)
 {
 	/*
-	 * Aim for roughly 200 metaslabs per vdev.
+	 * Aim for roughly metaslabs_per_vdev (default 200) metaslabs per vdev.
 	 */
-	vd->vdev_ms_shift = highbit64(vd->vdev_asize / 200);
+	vd->vdev_ms_shift = highbit64(vd->vdev_asize / metaslabs_per_vdev);
 	vd->vdev_ms_shift = MAX(vd->vdev_ms_shift, SPA_MAXBLOCKSHIFT);
 }
 

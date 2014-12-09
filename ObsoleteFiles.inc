@@ -38,11 +38,27 @@
 #   xargs -n1 | sort | uniq -d;
 # done
 
+# 20141205: convert sbin/mdconfig/tests to ATF format tests
+OLD_FILES+=usr/tests/sbin/mdconfig/legacy_test
+OLD_FILES+=usr/tests/sbin/mdconfig/mdconfig.test
+OLD_FILES+=usr/tests/sbin/mdconfig/run.pl
+# 20141028: debug files accidentally installed as directory name
+OLD_FILES+=usr/lib/debug/usr/lib/i18n
+OLD_FILES+=usr/lib/debug/usr/lib/private
+OLD_FILES+=usr/lib/debug/usr/lib32/i18n
+OLD_FILES+=usr/lib/debug/usr/lib32/private
+# 20141015: OpenSSL 1.0.1j import
+OLD_FILES+=usr/share/openssl/man/man3/CMS_sign_add1_signer.3.gz
+# 20141010: rc.d/kerberos removed
+OLD_FILES+=etc/rc.d/kerberos
+# 20140922: sleepq_calc_signal_retval.9 and sleepq_catch_signals.9 removed
+OLD_FILES+=usr/share/man/man9/sleepq_calc_signal_retval.9.gz
+OLD_FILES+=usr/share/man/man9/sleepq_catch_signals.9.gz
 # 20140917: hv_kvpd rc.d script removed in favor of devd configuration
 OLD_FILES+=etc/rc.d/hv_kvpd
 # 20140814: libopie version bump
-OLD_LIBS+=usr/lib/libopie.so.7
-OLD_LIBS+=usr/lib32/libopie.so.7
+OLD_LIBS+=usr/lib/libopie.so.8
+OLD_LIBS+=usr/lib32/libopie.so.8
 # 20140811: otp-sha renamed to otp-sha1
 OLD_FILES+=usr/bin/otp-sha
 OLD_FILES+=usr/share/man/man1/otp-sha.1.gz

@@ -1710,16 +1710,20 @@ pmap_update_pde(pmap_t pmap, vm_offset_t va, pd_entry_t *pde, pd_entry_t newpde)
 #define PMAP_CLFLUSH_THRESHOLD   (2 * 1024 * 1024)
 
 void
-pmap_invalidate_cache_range(vm_offset_t sva, vm_offset_t eva)
+pmap_invalidate_cache_range(vm_offset_t sva, vm_offset_t eva, boolean_t force)
 {
 
-	KASSERT((sva & PAGE_MASK) == 0,
-	    ("pmap_invalidate_cache_range: sva not page-aligned"));
-	KASSERT((eva & PAGE_MASK) == 0,
-	    ("pmap_invalidate_cache_range: eva not page-aligned"));
+	if (force) {
+		sva &= ~(vm_offset_t)cpu_clflush_line_size;
+	} else {
+		KASSERT((sva & PAGE_MASK) == 0,
+		    ("pmap_invalidate_cache_range: sva not page-aligned"));
+		KASSERT((eva & PAGE_MASK) == 0,
+		    ("pmap_invalidate_cache_range: eva not page-aligned"));
+	}
 
-	if (cpu_feature & CPUID_SS)
-		; /* If "Self Snoop" is supported, do nothing. */
+	if ((cpu_feature & CPUID_SS) != 0 && !force)
+		; /* If "Self Snoop" is supported and allowed, do nothing. */
 	else if ((cpu_feature & CPUID_CLFSH) != 0 &&
 	    eva - sva < PMAP_CLFLUSH_THRESHOLD) {
 
@@ -6222,7 +6226,7 @@ pmap_mapdev_attr(vm_paddr_t pa, vm_size_t size, int mode)
 	for (tmpsize = 0; tmpsize < size; tmpsize += PAGE_SIZE)
 		pmap_kenter_attr(va + tmpsize, pa + tmpsize, mode);
 	pmap_invalidate_range(kernel_pmap, va, va + tmpsize);
-	pmap_invalidate_cache_range(va, va + tmpsize);
+	pmap_invalidate_cache_range(va, va + tmpsize, FALSE);
 	return ((void *)(va + offset));
 }
 
@@ -6558,7 +6562,7 @@ pmap_change_attr_locked(vm_offset_t va, vm_size_t size, int mode)
 	 */
 	if (changed) {
 		pmap_invalidate_range(kernel_pmap, base, tmpva);
-		pmap_invalidate_cache_range(base, tmpva);
+		pmap_invalidate_cache_range(base, tmpva, FALSE);
 	}
 	return (error);
 }
@@ -6787,9 +6791,19 @@ retry:
 	if (ftype == VM_PROT_WRITE) {
 		if ((*pte & PG_RW) == 0)
 			goto done;
-		*pte |= PG_M;
+		/*
+		 * Set the modified and accessed bits simultaneously.
+		 *
+		 * Intel EPT PTEs that do software emulation of A/D bits map
+		 * PG_A and PG_M to EPT_PG_READ and EPT_PG_WRITE respectively.
+		 * An EPT misconfiguration is triggered if the PTE is writable
+		 * but not readable (WR=10). This is avoided by setting PG_A
+		 * and PG_M simultaneously.
+		 */
+		*pte |= PG_M | PG_A;
+	} else {
+		*pte |= PG_A;
 	}
-	*pte |= PG_A;
 
 	/* try to promote the mapping */
 	if (va < VM_MAXUSER_ADDRESS)

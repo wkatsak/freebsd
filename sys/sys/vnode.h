@@ -305,6 +305,7 @@ struct vattr {
 #define	IO_NORMAL	0x0800		/* operate on regular data */
 #define	IO_NOMACCHECK	0x1000		/* MAC checks unnecessary */
 #define	IO_BUFLOCKED	0x2000		/* ffs flag; indir buf is locked */
+#define	IO_RANGELOCKED	0x4000		/* range locked */
 
 #define IO_SEQMAX	0x7F		/* seq heuristic max value */
 #define IO_SEQSHIFT	16		/* seq heuristic in upper 16 bits */
@@ -755,6 +756,9 @@ int	vop_enoent(struct vop_generic_args *ap);
 int	vop_enotty(struct vop_generic_args *ap);
 int	vop_null(struct vop_generic_args *ap);
 int	vop_panic(struct vop_generic_args *ap);
+int	dead_poll(struct vop_poll_args *ap);
+int	dead_read(struct vop_read_args *ap);
+int	dead_write(struct vop_write_args *ap);
 
 /* These are called from within the actual VOPS. */
 void	vop_create_post(void *a, int rc);

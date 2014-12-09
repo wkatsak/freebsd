@@ -4016,9 +4016,10 @@ OLD_FILES+=usr/share/sendmail/cf/siteconfig/uucp.ucbarpa.m4
 OLD_FILES+=usr/share/sendmail/cf/siteconfig/uucp.ucbvax.m4
 .endif
 
-#.if ${MK_SHAREDOCS} == no
-# to be filled in
-#.endif
+.if ${MK_SHAREDOCS} == no
+OLD_FILES+=usr/share/doc/pjdfstest/README
+OLD_DIRS+=usr/share/doc/pjdfstest
+.endif
 
 #.if ${MK_SYSCONS} == no
 # to be filled in
@@ -4694,5 +4695,6 @@ OLD_FILES+=etc/devd/hyperv.conf
 OLD_FILES+=usr/libexec/hyperv/hv_set_ifconfig
 OLD_FILES+=usr/libexec/hyperv/hv_get_dns_info
 OLD_FILES+=usr/libexec/hyperv/hv_get_dhcp_info
-OLD_FILES+=usr/sbin/hv_kvpd
+OLD_FILES+=usr/sbin/hv_kvp_daemon
+OLD_FILES+=usr/share/man/man8/hv_kvp_daemon.8.gz
 .endif

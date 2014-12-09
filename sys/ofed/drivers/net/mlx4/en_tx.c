@@ -31,7 +31,7 @@
  *
  */
 
-#include <asm/page.h>
+#include <linux/page.h>
 #include <linux/mlx4/cq.h>
 #include <linux/slab.h>
 #include <linux/mlx4/qp.h>
@@ -1028,9 +1028,6 @@ mlx4_en_transmit_locked(struct ifnet *dev, int tx_ind, struct mbuf *m)
 		}
 		drbr_advance(dev, ring->br);
 		enqueued++;
-		dev->if_obytes += next->m_pkthdr.len;
-		if (next->m_flags & M_MCAST)
-			dev->if_omcasts++;
 		if ((dev->if_drv_flags & IFF_DRV_RUNNING) == 0)
 			break;
 	}

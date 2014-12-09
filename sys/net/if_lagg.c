@@ -303,20 +303,20 @@ lagg_clone_create(struct if_clone *ifc, int unit, caddr_t params)
 		&SYSCTL_NODE_CHILDREN(_net_link, lagg),
 		OID_AUTO, num, CTLFLAG_RD, NULL, "");
 	SYSCTL_ADD_INT(&sc->ctx, SYSCTL_CHILDREN(oid), OID_AUTO,
-		"use_flowid", CTLTYPE_INT|CTLFLAG_RW, &sc->use_flowid,
+		"use_flowid", CTLFLAG_RW, &sc->use_flowid,
 		sc->use_flowid, "Use flow id for load sharing");
 	SYSCTL_ADD_INT(&sc->ctx, SYSCTL_CHILDREN(oid), OID_AUTO,
-		"flowid_shift", CTLTYPE_INT|CTLFLAG_RW, &sc->flowid_shift,
+		"flowid_shift", CTLFLAG_RW, &sc->flowid_shift,
 		sc->flowid_shift,
 		"Shift flowid bits to prevent multiqueue collisions");
 	SYSCTL_ADD_INT(&sc->ctx, SYSCTL_CHILDREN(oid), OID_AUTO,
-		"count", CTLTYPE_INT|CTLFLAG_RD, &sc->sc_count, sc->sc_count,
+		"count", CTLFLAG_RD, &sc->sc_count, sc->sc_count,
 		"Total number of ports");
 	SYSCTL_ADD_PROC(&sc->ctx, SYSCTL_CHILDREN(oid), OID_AUTO,
 		"active", CTLTYPE_INT|CTLFLAG_RD, sc, 0, lagg_sysctl_active,
 		"I", "Total number of active ports");
 	SYSCTL_ADD_INT(&sc->ctx, SYSCTL_CHILDREN(oid), OID_AUTO,
-		"flapping", CTLTYPE_INT|CTLFLAG_RD, &sc->sc_flapping,
+		"flapping", CTLFLAG_RD, &sc->sc_flapping,
 		sc->sc_flapping, "Total number of port change events");
 	/* Hash all layers by default */
 	sc->sc_flags = LAGG_F_HASHL2|LAGG_F_HASHL3|LAGG_F_HASHL4;
@@ -448,23 +448,18 @@ lagg_capabilities(struct lagg_softc *sc)
 	struct lagg_port *lp;
 	int cap = ~0, ena = ~0;
 	u_long hwa = ~0UL;
-#if defined(INET) || defined(INET6)
-	u_int hw_tsomax = IP_MAXPACKET;	/* Initialize to the maximum value. */
-#else
-	u_int hw_tsomax = ~0;	/* if_hw_tsomax is only for INET/INET6, but.. */
-#endif
+	struct ifnet_hw_tsomax hw_tsomax;
 
 	LAGG_WLOCK_ASSERT(sc);
+
+	memset(&hw_tsomax, 0, sizeof(hw_tsomax));
 
 	/* Get capabilities from the lagg ports */
 	SLIST_FOREACH(lp, &sc->sc_ports, lp_entries) {
 		cap &= lp->lp_ifp->if_capabilities;
 		ena &= lp->lp_ifp->if_capenable;
 		hwa &= lp->lp_ifp->if_hwassist;
-		/* Set to the minimum value of the lagg ports. */
-		if (lp->lp_ifp->if_hw_tsomax < hw_tsomax &&
-		    lp->lp_ifp->if_hw_tsomax > 0)
-			hw_tsomax = lp->lp_ifp->if_hw_tsomax;
+		if_hw_tsomax_common(lp->lp_ifp, &hw_tsomax);
 	}
 	cap = (cap == ~0 ? 0 : cap);
 	ena = (ena == ~0 ? 0 : ena);
@@ -473,11 +468,10 @@ lagg_capabilities(struct lagg_softc *sc)
 	if (sc->sc_ifp->if_capabilities != cap ||
 	    sc->sc_ifp->if_capenable != ena ||
 	    sc->sc_ifp->if_hwassist != hwa ||
-	    sc->sc_ifp->if_hw_tsomax != hw_tsomax) {
+	    if_hw_tsomax_update(sc->sc_ifp, &hw_tsomax) != 0) {
 		sc->sc_ifp->if_capabilities = cap;
 		sc->sc_ifp->if_capenable = ena;
 		sc->sc_ifp->if_hwassist = hwa;
-		sc->sc_ifp->if_hw_tsomax = hw_tsomax;
 		getmicrotime(&sc->sc_ifp->if_lastchange);
 
 		if (sc->sc_ifflags & IFF_DEBUG)

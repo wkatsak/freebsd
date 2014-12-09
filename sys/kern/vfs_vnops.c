@@ -502,13 +502,16 @@ vn_rdwr(enum uio_rw rw, struct vnode *vp, void *base, int len, off_t offset,
 	error = 0;
 
 	if ((ioflg & IO_NODELOCKED) == 0) {
-		if (rw == UIO_READ) {
-			rl_cookie = vn_rangelock_rlock(vp, offset,
-			    offset + len);
-		} else {
-			rl_cookie = vn_rangelock_wlock(vp, offset,
-			    offset + len);
-		}
+		if ((ioflg & IO_RANGELOCKED) == 0) {
+			if (rw == UIO_READ) {
+				rl_cookie = vn_rangelock_rlock(vp, offset,
+				    offset + len);
+			} else {
+				rl_cookie = vn_rangelock_wlock(vp, offset,
+				    offset + len);
+			}
+		} else
+			rl_cookie = NULL;
 		mp = NULL;
 		if (rw == UIO_WRITE) { 
 			if (vp->v_type != VCHR &&
@@ -1846,8 +1849,10 @@ vfs_write_suspend_umnt(struct mount *mp)
 	for (;;) {
 		vn_finished_write(mp);
 		error = vfs_write_suspend(mp, 0);
-		if (error != 0)
+		if (error != 0) {
+			vn_start_write(NULL, &mp, V_WAIT);
 			return (error);
+		}
 		MNT_ILOCK(mp);
 		if ((mp->mnt_kern_flag & MNTK_SUSPENDED) != 0)
 			break;

@@ -46,6 +46,7 @@ MAN=	accept_filter.9 \
 	BUS_SETUP_INTR.9 \
 	bus_space.9 \
 	byteorder.9 \
+	casuword.9 \
 	cd.9 \
 	condvar.9 \
 	config_intrhook.9 \
@@ -566,6 +567,9 @@ MLINKS+=condvar.9 cv_broadcast.9 \
 MLINKS+=config_intrhook.9 config_intrhook_disestablish.9 \
 	config_intrhook.9 config_intrhook_establish.9
 MLINKS+=contigmalloc.9 contigfree.9
+MLINKS+=casuword.9 casueword.9 \
+	casuword.9 casueword32.9 \
+	casuword.9 casuword32.9
 MLINKS+=copy.9 copyin.9 \
 	copy.9 copyin_nofault.9 \
 	copy.9 copyinstr.9 \
@@ -668,7 +672,10 @@ MLINKS+=fetch.9 fubyte.9 \
 	fetch.9 fuword.9 \
 	fetch.9 fuword16.9 \
 	fetch.9 fuword32.9 \
-	fetch.9 fuword64.9
+	fetch.9 fuword64.9 \
+	fetch.9 fueword.9 \
+	fetch.9 fueword32.9 \
+	fetch.9 fueword64.9
 MLINKS+=fpu_kern.9 fpu_kern_alloc_ctx.9 \
 	fpu_kern.9 fpu_kern_free_ctx.9 \
 	fpu_kern.9 fpu_kern_enter.9 \
@@ -1238,8 +1245,6 @@ MLINKS+=sleepqueue.9 init_sleepqueues.9 \
 	sleepqueue.9 sleepq_add.9 \
 	sleepqueue.9 sleepq_alloc.9 \
 	sleepqueue.9 sleepq_broadcast.9 \
-	sleepqueue.9 sleepq_calc_signal_retval.9 \
-	sleepqueue.9 sleepq_catch_signals.9 \
 	sleepqueue.9 sleepq_free.9 \
 	sleepqueue.9 sleepq_lookup.9 \
 	sleepqueue.9 sleepq_release.9 \
@@ -1380,10 +1385,14 @@ MLINKS+=timeout.9 callout.9 \
 	timeout.9 callout_init_rw.9 \
 	timeout.9 callout_pending.9 \
 	timeout.9 callout_reset.9 \
-	timeout.9 callout_reset_sbt.9 \
 	timeout.9 callout_reset_on.9 \
+	timeout.9 callout_reset_sbt.9 \
+	timeout.9 callout_reset_sbt_curcpu.9 \
 	timeout.9 callout_reset_sbt_on.9 \
 	timeout.9 callout_schedule.9 \
+	timeout.9 callout_schedule_sbt.9 \
+	timeout.9 callout_schedule_sbt_curcpu.9 \
+	timeout.9 callout_schedule_sbt_on.9 \
 	timeout.9 callout_stop.9 \
 	timeout.9 untimeout.9
 MLINKS+=ucred.9 crcopy.9 \
