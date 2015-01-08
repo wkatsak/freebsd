@@ -191,7 +191,7 @@ static struct icl_pdu *
 cfiscsi_pdu_new_response(struct icl_pdu *request, int flags)
 {
 
-	return (icl_pdu_new_bhs(request->ip_conn, flags));
+	return (icl_pdu_new(request->ip_conn, flags));
 }
 
 static bool
@@ -237,19 +237,34 @@ cfiscsi_pdu_update_cmdsn(const struct icl_pdu *request)
 	}
 #endif
 
-	/*
-	 * The target MUST silently ignore any non-immediate command outside
-	 * of this range.
-	 */
-	if (cmdsn < cs->cs_cmdsn || cmdsn > cs->cs_cmdsn + maxcmdsn_delta) {
-		CFISCSI_SESSION_UNLOCK(cs);
-		CFISCSI_SESSION_WARN(cs, "received PDU with CmdSN %d, "
-		    "while expected CmdSN was %d", cmdsn, cs->cs_cmdsn);
-		return (true);
-	}
+	if ((request->ip_bhs->bhs_opcode & ISCSI_BHS_OPCODE_IMMEDIATE) == 0) {
+		/*
+		 * The target MUST silently ignore any non-immediate command
+		 * outside of this range.
+		 */
+		if (ISCSI_SNLT(cmdsn, cs->cs_cmdsn) ||
+		    ISCSI_SNGT(cmdsn, cs->cs_cmdsn + maxcmdsn_delta)) {
+			CFISCSI_SESSION_UNLOCK(cs);
+			CFISCSI_SESSION_WARN(cs, "received PDU with CmdSN %u, "
+			    "while expected %u", cmdsn, cs->cs_cmdsn);
+			return (true);
+		}
 
-	if ((request->ip_bhs->bhs_opcode & ISCSI_BHS_OPCODE_IMMEDIATE) == 0)
+		/*
+		 * We don't support multiple connections now, so any
+		 * discontinuity in CmdSN means lost PDUs.  Since we don't
+		 * support PDU retransmission -- terminate the connection.
+		 */
+		if (cmdsn != cs->cs_cmdsn) {
+			CFISCSI_SESSION_UNLOCK(cs);
+			CFISCSI_SESSION_WARN(cs, "received PDU with CmdSN %u, "
+			    "while expected %u; dropping connection",
+			    cmdsn, cs->cs_cmdsn);
+			cfiscsi_session_terminate(cs);
+			return (true);
+		}
 		cs->cs_cmdsn++;
+	}
 
 	CFISCSI_SESSION_UNLOCK(cs);
 
@@ -371,14 +386,16 @@ cfiscsi_pdu_prepare(struct icl_pdu *response)
 	 * See the comment below - StatSN is not meaningful and must
 	 * not be advanced.
 	 */
-	if (bhssr->bhssr_opcode == ISCSI_BHS_OPCODE_SCSI_DATA_IN)
+	if (bhssr->bhssr_opcode == ISCSI_BHS_OPCODE_SCSI_DATA_IN &&
+	    (bhssr->bhssr_flags & BHSDI_FLAGS_S) == 0)
 		advance_statsn = false;
 
 	/*
 	 * 10.7.3: "The fields StatSN, Status, and Residual Count
 	 * only have meaningful content if the S bit is set to 1."
 	 */
-	if (bhssr->bhssr_opcode != ISCSI_BHS_OPCODE_SCSI_DATA_IN)
+	if (bhssr->bhssr_opcode != ISCSI_BHS_OPCODE_SCSI_DATA_IN ||
+	    (bhssr->bhssr_flags & BHSDI_FLAGS_S))
 		bhssr->bhssr_statsn = htonl(cs->cs_statsn);
 	bhssr->bhssr_expcmdsn = htonl(cs->cs_cmdsn);
 	bhssr->bhssr_maxcmdsn = htonl(cs->cs_cmdsn + maxcmdsn_delta);
@@ -546,13 +563,6 @@ cfiscsi_pdu_handle_scsi_command(struct icl_pdu *request)
 		return;
 	}
 	io = ctl_alloc_io(cs->cs_target->ct_port.ctl_pool_ref);
-	if (io == NULL) {
-		CFISCSI_SESSION_WARN(cs, "can't allocate ctl_io; "
-		    "dropping connection");
-		icl_pdu_free(request);
-		cfiscsi_session_terminate(cs);
-		return;
-	}
 	ctl_zero_io(io);
 	io->io_hdr.ctl_private[CTL_PRIV_FRONTEND].ptr = request;
 	io->io_hdr.io_type = CTL_IO_SCSI;
@@ -610,13 +620,6 @@ cfiscsi_pdu_handle_task_request(struct icl_pdu *request)
 	cs = PDU_SESSION(request);
 	bhstmr = (struct iscsi_bhs_task_management_request *)request->ip_bhs;
 	io = ctl_alloc_io(cs->cs_target->ct_port.ctl_pool_ref);
-	if (io == NULL) {
-		CFISCSI_SESSION_WARN(cs, "can't allocate ctl_io;"
-		    "dropping connection");
-		icl_pdu_free(request);
-		cfiscsi_session_terminate(cs);
-		return;
-	}
 	ctl_zero_io(io);
 	io->io_hdr.ctl_private[CTL_PRIV_FRONTEND].ptr = request;
 	io->io_hdr.io_type = CTL_IO_TASK;
@@ -908,6 +911,16 @@ cfiscsi_pdu_handle_data_out(struct icl_pdu *request)
 		return;
 	}
 
+	if (cdw->cdw_datasn != ntohl(bhsdo->bhsdo_datasn)) {
+		CFISCSI_SESSION_WARN(cs, "received Data-Out PDU with "
+		    "DataSN %u, while expected %u; dropping connection",
+		    ntohl(bhsdo->bhsdo_datasn), cdw->cdw_datasn);
+		icl_pdu_free(request);
+		cfiscsi_session_terminate(cs);
+		return;
+	}
+	cdw->cdw_datasn++;
+
 	io = cdw->cdw_ctl_io;
 	KASSERT((io->io_hdr.flags & CTL_FLAG_DATA_MASK) != CTL_FLAG_DATA_IN,
 	    ("CTL_FLAG_DATA_IN"));
@@ -1044,7 +1057,7 @@ cfiscsi_callout(void *context)
 	if (cs->cs_timeout < 2)
 		return;
 
-	cp = icl_pdu_new_bhs(cs->cs_conn, M_NOWAIT);
+	cp = icl_pdu_new(cs->cs_conn, M_NOWAIT);
 	if (cp == NULL) {
 		CFISCSI_SESSION_WARN(cs, "failed to allocate memory");
 		return;
@@ -1067,10 +1080,6 @@ cfiscsi_session_terminate_tasks(struct cfiscsi_session *cs)
 	if (cs->cs_target == NULL)
 		return;		/* No target yet, so nothing to do. */
 	io = ctl_alloc_io(cs->cs_target->ct_port.ctl_pool_ref);
-	if (io == NULL) {
-		CFISCSI_SESSION_WARN(cs, "can't allocate ctl_io");
-		return;
-	}
 	ctl_zero_io(io);
 	io->io_hdr.ctl_private[CTL_PRIV_FRONTEND].ptr = cs;
 	io->io_hdr.io_type = CTL_IO_TASK;
@@ -1663,7 +1672,7 @@ cfiscsi_ioctl_terminate(struct ctl_iscsi *ci)
 		    strcmp(cs->cs_initiator_addr, citp->initiator_addr) != 0)
 			continue;
 
-		response = icl_pdu_new_bhs(cs->cs_conn, M_NOWAIT);
+		response = icl_pdu_new(cs->cs_conn, M_NOWAIT);
 		if (response == NULL) {
 			/*
 			 * Oh well.  Just terminate the connection.
@@ -1713,7 +1722,7 @@ cfiscsi_ioctl_logout(struct ctl_iscsi *ci)
 		    strcmp(cs->cs_initiator_addr, cilp->initiator_addr) != 0)
 			continue;
 
-		response = icl_pdu_new_bhs(cs->cs_conn, M_NOWAIT);
+		response = icl_pdu_new(cs->cs_conn, M_NOWAIT);
 		if (response == NULL) {
 			ci->status = CTL_ISCSI_ERROR;
 			snprintf(ci->error_str, sizeof(ci->error_str),
@@ -1883,7 +1892,7 @@ cfiscsi_ioctl_send(struct ctl_iscsi *ci)
 		}
 	}
 
-	ip = icl_pdu_new_bhs(cs->cs_conn, M_WAITOK);
+	ip = icl_pdu_new(cs->cs_conn, M_WAITOK);
 	memcpy(ip->ip_bhs, cisp->bhs, sizeof(*ip->ip_bhs));
 	if (datalen > 0) {
 		icl_pdu_append_data(ip, data, datalen, M_WAITOK);
@@ -2570,8 +2579,10 @@ cfiscsi_datamove_in(union ctl_io *io)
 			 */
 			buffer_offset += response->ip_data_len;
 			if (buffer_offset == io->scsiio.kern_total_len ||
-			    buffer_offset == expected_len)
-				bhsdi->bhsdi_flags |= BHSDI_FLAGS_F;
+			    buffer_offset == expected_len) {
+				buffer_offset -= response->ip_data_len;
+				break;
+			}
 			cfiscsi_pdu_queue(response);
 			response = NULL;
 			bhsdi = NULL;
@@ -2580,8 +2591,27 @@ cfiscsi_datamove_in(union ctl_io *io)
 	if (response != NULL) {
 		buffer_offset += response->ip_data_len;
 		if (buffer_offset == io->scsiio.kern_total_len ||
-		    buffer_offset == expected_len)
+		    buffer_offset == expected_len) {
 			bhsdi->bhsdi_flags |= BHSDI_FLAGS_F;
+			if (io->io_hdr.status == CTL_SUCCESS) {
+				bhsdi->bhsdi_flags |= BHSDI_FLAGS_S;
+				if (PDU_TOTAL_TRANSFER_LEN(request) <
+				    ntohl(bhssc->bhssc_expected_data_transfer_length)) {
+					bhsdi->bhsdi_flags |= BHSSR_FLAGS_RESIDUAL_UNDERFLOW;
+					bhsdi->bhsdi_residual_count =
+					    htonl(ntohl(bhssc->bhssc_expected_data_transfer_length) -
+					    PDU_TOTAL_TRANSFER_LEN(request));
+				} else if (PDU_TOTAL_TRANSFER_LEN(request) >
+				    ntohl(bhssc->bhssc_expected_data_transfer_length)) {
+					bhsdi->bhsdi_flags |= BHSSR_FLAGS_RESIDUAL_OVERFLOW;
+					bhsdi->bhsdi_residual_count =
+					    htonl(PDU_TOTAL_TRANSFER_LEN(request) -
+					    ntohl(bhssc->bhssc_expected_data_transfer_length));
+				}
+				bhsdi->bhsdi_status = io->scsiio.scsi_status;
+				io->io_hdr.flags |= CTL_FLAG_STATUS_SENT;
+			}
+		}
 		KASSERT(response->ip_data_len > 0, ("sending empty Data-In"));
 		cfiscsi_pdu_queue(response);
 	}
@@ -2649,6 +2679,7 @@ cfiscsi_datamove_out(union ctl_io *io)
 	cdw->cdw_target_transfer_tag = target_transfer_tag;
 	cdw->cdw_initiator_task_tag = bhssc->bhssc_initiator_task_tag;
 	cdw->cdw_r2t_end = io->scsiio.kern_data_len;
+	cdw->cdw_datasn = 0;
 
 	/* Set initial data pointer for the CDW respecting ext_data_filled. */
 	if (io->scsiio.kern_sg_entries > 0) {
@@ -2787,8 +2818,9 @@ cfiscsi_scsi_command_done(union ctl_io *io)
 	 * Do not return status for aborted commands.
 	 * There are exceptions, but none supported by CTL yet.
 	 */
-	if ((io->io_hdr.flags & CTL_FLAG_ABORT) &&
-	    (io->io_hdr.flags & CTL_FLAG_ABORT_STATUS) == 0) {
+	if (((io->io_hdr.flags & CTL_FLAG_ABORT) &&
+	     (io->io_hdr.flags & CTL_FLAG_ABORT_STATUS) == 0) ||
+	    (io->io_hdr.flags & CTL_FLAG_STATUS_SENT)) {
 		ctl_free_io(io);
 		icl_pdu_free(request);
 		return;

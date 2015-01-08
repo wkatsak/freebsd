@@ -3062,20 +3062,63 @@ int
 freebsd32_procctl(struct thread *td, struct freebsd32_procctl_args *uap)
 {
 	void *data;
-	int error, flags;
+	union {
+		struct procctl_reaper_status rs;
+		struct procctl_reaper_pids rp;
+		struct procctl_reaper_kill rk;
+	} x;
+	union {
+		struct procctl_reaper_pids32 rp;
+	} x32;
+	int error, error1, flags;
 
 	switch (uap->com) {
 	case PROC_SPROTECT:
 		error = copyin(PTRIN(uap->data), &flags, sizeof(flags));
-		if (error)
+		if (error != 0)
 			return (error);
 		data = &flags;
+		break;
+	case PROC_REAP_ACQUIRE:
+	case PROC_REAP_RELEASE:
+		if (uap->data != NULL)
+			return (EINVAL);
+		data = NULL;
+		break;
+	case PROC_REAP_STATUS:
+		data = &x.rs;
+		break;
+	case PROC_REAP_GETPIDS:
+		error = copyin(uap->data, &x32.rp, sizeof(x32.rp));
+		if (error != 0)
+			return (error);
+		CP(x32.rp, x.rp, rp_count);
+		PTRIN_CP(x32.rp, x.rp, rp_pids);
+		data = &x.rp;
+		break;
+	case PROC_REAP_KILL:
+		error = copyin(uap->data, &x.rk, sizeof(x.rk));
+		if (error != 0)
+			return (error);
+		data = &x.rk;
 		break;
 	default:
 		return (EINVAL);
 	}
-	return (kern_procctl(td, uap->idtype, PAIR32TO64(id_t, uap->id),
-	    uap->com, data));
+	error = kern_procctl(td, uap->idtype, PAIR32TO64(id_t, uap->id),
+	    uap->com, data);
+	switch (uap->com) {
+	case PROC_REAP_STATUS:
+		if (error == 0)
+			error = copyout(&x.rs, uap->data, sizeof(x.rs));
+		break;
+	case PROC_REAP_KILL:
+		error1 = copyout(&x.rk, uap->data, sizeof(x.rk));
+		if (error == 0)
+			error = error1;
+		break;
+	}
+	return (error);
 }
 
 int
@@ -3101,4 +3144,32 @@ freebsd32_fcntl(struct thread *td, struct freebsd32_fcntl_args *uap)
 		break;
 	}
 	return (kern_fcntl_freebsd(td, uap->fd, uap->cmd, tmp));
+}
+
+int
+freebsd32_ppoll(struct thread *td, struct freebsd32_ppoll_args *uap)
+{
+	struct timespec32 ts32;
+	struct timespec ts, *tsp;
+	sigset_t set, *ssp;
+	int error;
+
+	if (uap->ts != NULL) {
+		error = copyin(uap->ts, &ts32, sizeof(ts32));
+		if (error != 0)
+			return (error);
+		CP(ts32, ts, tv_sec);
+		CP(ts32, ts, tv_nsec);
+		tsp = &ts;
+	} else
+		tsp = NULL;
+	if (uap->set != NULL) {
+		error = copyin(uap->set, &set, sizeof(set));
+		if (error != 0)
+			return (error);
+		ssp = &set;
+	} else
+		ssp = NULL;
+
+	return (kern_poll(td, uap->fds, uap->nfds, tsp, ssp));
 }
